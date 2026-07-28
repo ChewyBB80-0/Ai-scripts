@@ -35,6 +35,9 @@ STEPS = [
     # Pings on Discord only when a watched video goes live or crosses a view
     # milestone -- silent otherwise, so it stays worth reading.
     ["watch_video.py", "--check"],
+    # Pings Discord ONLY when the pipeline has gone quiet for a bad reason,
+    # or a token/disk problem appears. Silent when healthy.
+    ["health_check.py"],
     # Sends one report per day, held until 08:00 local (see discord_notify).
     ["scripts/discord_notify.py", "report"],
 ]
