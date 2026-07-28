@@ -249,10 +249,28 @@ def generate_story_via_claude(topic_hint: str = "", api_key: str | None = None,
                  "their", "have", "been", "were", "would", "could", "told",
                  "said", "asked", "made", "went", "took", "back", "only",
                  "never", "every", "years", "year", "months", "days", "time"}
+        # Words belonging to a DELIBERATELY weighted theme must never be banned.
+        # Without this the two systems fight: THEME_WEIGHTS steers toward
+        # landlord/wedding stories, then the motif ban blocks the word
+        # "landlord" for recurring -- which is the whole point of weighting it.
+        # The ban exists to catch a repeated SPECIFIC (four "gym teacher"
+        # stories), not the themes we are intentionally pursuing.
+        _protected = set()
+        for _t in (getattr(_cfg, "THEME_WEIGHTS", {}) or {}):
+            _protected.update({
+                "family": {"sister", "sisters", "brother", "mother", "father",
+                           "parent", "parents", "sibling", "cousin", "aunt",
+                           "uncle", "inlaw", "inlaws"},
+                "hoa": {"neighbor", "neighbour", "neighbors", "association"},
+                "wedding": {"wedding", "weddings", "bride", "groom", "bridal",
+                            "engagement", "honor", "bridesmaid", "rehearsal"},
+                "landlord": {"landlord", "landlords", "tenant", "lease",
+                             "rent", "deposit", "apartment"},
+            }.get(_t, set()))
         _counts = collections.Counter(
             w for p in avoid[-25:]
             for w in _re.findall(r"[a-z]+", p.lower())
-            if len(w) > 3 and w not in _stop)
+            if len(w) > 3 and w not in _stop and w not in _protected)
         _over = [w for w, n in _counts.most_common(8) if n >= 3]
         if _over:
             _avoid_txt += (
