@@ -1,0 +1,13 @@
+{
+  "title": "world_hash_mismatch",
+  "display_title": "My Minecraft world's file size changed overnight, and I live alone.",
+  "beats": [
+    "My solo parkour world's save file grew by forty megabytes overnight, and I live alone.",
+    "I opened it thinking a mod glitched, but my player skin was standing at the finish line, facing the wall.",
+    "I hadn't logged in since noon. My PC shows only one login that day: mine.",
+    "I checked the world backup from a week ago to compare, just to feel sane again.",
+    "In that backup, the same skin is already there, one block further back, like it's been walking toward the finish for days.",
+    "I deleted the world an hour ago. Steam still shows it installed, and the file size just went up again."
+  ],
+  "genre": "creepy"
+}

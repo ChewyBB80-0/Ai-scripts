@@ -1,0 +1,36 @@
+[
+  {
+    "id": "parkourflux",
+    "name": "ParkourFlux AI",
+    "enabled": true,
+    "handle": "@ParkourFlux",
+    "genres": [
+      "aitah",
+      "confession",
+      "revenge",
+      "creepy"
+    ],
+    "yt_token": "token.json",
+    "footage_dir": "footage",
+    "logo": "branding/logo.png",
+    "daily_target": 2,
+    "ig_enabled": true
+  },
+  {
+    "id": "carveteran",
+    "name": "The Car Veteran",
+    "enabled": false,
+    "handle": "@thecarveteran",
+    "genres": [
+      "revenge"
+    ],
+    "yt_token": "token_carveteran.json",
+    "footage_dir": "footage/gta",
+    "logo": "branding/logo_carveteran.png",
+    "daily_target": 1,
+    "ig_enabled": false,
+    "post_log": "output/carveteran/post_log.csv",
+    "queue_file": "output/carveteran/post_queue/queue.json",
+    "out_dir": "output/carveteran"
+  }
+]

@@ -1,0 +1,8 @@
+[Unit]
+Description=Media Maker hourly pipeline (one pass)
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/media_maker
+ExecStart=%h/media_maker/venv/bin/python %h/media_maker/run_all.py
+EnvironmentFile=%h/media_maker/.env

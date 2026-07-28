@@ -1,0 +1,498 @@
+"""
+compilation.py
+Stitches already-rendered Shorts into ONE long-form video for YouTube.
+
+Why this exists: a vertical video <=3 minutes is classified as a Short, and
+Shorts earn ZERO "valid public watch hours" toward the Partner Program -- they
+feed a separate 10M-views/90-day track instead. Combining two 55s saga parts
+still lands under 3 minutes, so it stays a Short and still earns nothing. The
+only way this content generates watch hours is a compilation LONG enough to be
+treated as a normal video (we target 10+ minutes, well clear of the line).
+
+It also attacks the subscriber half of the problem: someone who watches eight
+minutes is a far likelier subscriber than someone who scrolls past a Short,
+which is the gap behind 800+ views and 0 subs.
+
+Design notes:
+  * Best-performing stories go FIRST (strongest hook up top = retention).
+  * Saga parts are kept TOGETHER and IN ORDER -- ranking purely by views would
+    scatter a pt2 away from its pt1 and break the story.
+  * Vertical is padded into 16:9 over a blurred copy of itself, so it doesn't
+    sit in ugly pillarboxes on desktop.
+  * A numbered title card announces each story, so the result is a structured
+    video rather than a raw dump.
+  * Used stories are recorded, so the next compilation picks fresh ones.
+
+    python compilation.py --minutes 12          # build (does not upload)
+    python compilation.py --minutes 12 --upload # build + upload as long-form
+    python compilation.py --list                # what's available/used
+"""
+
+import argparse
+import csv
+import json
+import re
+import subprocess
+from pathlib import Path
+
+import config
+from ffmpeg_setup import ensure_ffmpeg
+
+ROOT = Path(__file__).parent
+OUT_DIR = ROOT / "output" / "compilations"
+USED_FILE = ROOT / "output" / "compilation_used.json"
+W, H = 1920, 1080          # 16:9 long-form, NOT vertical (must not be a Short)
+CARD_SECONDS = 2.0
+
+# Weekly build settings (--weekly, run hourly from run_all.py).
+COMPILATION_WEEKDAY = 6    # 6 = Sunday; a week's Shorts are done by then
+TARGET_MINUTES = 12
+MIN_MINUTES = 8            # below this, wait rather than ship a thin one
+
+# THEMES -- modelled on how the big Reddit-compilation channels actually work
+# (e.g. a 2-hour upload where every story is about one subject). A theme is a
+# promise: it gives a viewer a reason to keep watching past the story they
+# clicked for, which a random grab-bag never does. Mixed compilations are the
+# fallback, not the goal.
+THEMES = {
+    "landlord": (("landlord", "lease", "tenant", "rent", "deposit", "apartment",
+                  "eviction", "security deposit"),
+                 "Landlords Who Picked The Wrong Tenant"),
+    "hoa": (("hoa", "homeowners association", "neighbor", "mailbox", "fence", "yard"),
+            "HOA Presidents Who Went Too Far"),
+    "wedding": (("wedding", "bride", "groom", "maid of honor", "bridesmaid",
+                 "rehearsal", "engagement"),
+                "Weddings That Fell Apart"),
+    "work": (("boss", "manager", "coworker", "fired", "shift", "badge",
+              "register", "write-up", "hr "),
+             "Bosses Who Regretted It"),
+    "family": (("sister", "brother", "mom", "dad", "mother", "father",
+                "in-law", "cousin", "aunt", "uncle"),
+               "Family Drama That Went Nuclear"),
+    "creepy": (("baby monitor", "3am", "night shift", "footsteps", "attic",
+                "basement", "vanished", "no one", "alone"),
+               "Stories That'll Keep You Up Tonight"),
+}
+# A themed compilation needs enough of one subject to justify the promise.
+MIN_THEME_MINUTES = 15
+
+
+def theme_of(group: dict) -> str | None:
+    t = (group["title"] + " " + group["base"]).lower()
+    for name, (keys, _title) in THEMES.items():
+        if any(k in t for k in keys):
+            return name
+    return None
+
+
+def themed_inventory(include_used: bool = False) -> dict:
+    """{theme: {'groups': [...], 'minutes': float, 'title': str}} sorted by size."""
+    out: dict[str, dict] = {}
+    for g in rank_stories(include_used=include_used):
+        name = theme_of(g)
+        if not name:
+            continue
+        d = out.setdefault(name, {"groups": [], "minutes": 0.0,
+                                  "title": THEMES[name][1]})
+        d["groups"].append(g)
+        d["minutes"] += g["seconds"] / 60
+    return dict(sorted(out.items(), key=lambda kv: -kv[1]["minutes"]))
+
+
+def _used() -> set[str]:
+    try:
+        return set(json.loads(USED_FILE.read_text(encoding="utf-8")))
+    except Exception:
+        return set()
+
+
+def _mark_used(stems: list[str]):
+    USED_FILE.parent.mkdir(parents=True, exist_ok=True)
+    USED_FILE.write_text(json.dumps(sorted(_used() | set(stems)), indent=1),
+                         encoding="utf-8")
+
+
+def _base(stem: str) -> str:
+    return re.sub(r"_pt\d+$", "", stem)
+
+
+def _part_no(stem: str) -> int:
+    m = re.search(r"_pt(\d+)$", stem)
+    return int(m.group(1)) if m else 1
+
+
+def _duration(path: Path) -> float:
+    try:
+        r = subprocess.run(["ffprobe", "-v", "quiet", "-show_entries",
+                            "format=duration", "-of", "csv=p=0", str(path)],
+                           capture_output=True, text=True, timeout=30)
+        return float(r.stdout.strip())
+    except Exception:
+        return 0.0
+
+
+def _title_for(stem: str) -> str:
+    """The story's own hook, from its caption file; falls back to the stem."""
+    cap = ROOT / "output" / f"{stem}_caption.txt"
+    if cap.exists():
+        for line in cap.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if len(line) > 15:
+                return line
+    return stem.replace("_", " ").title()
+
+
+def _deleted_stems() -> set[str]:
+    """Stems whose YouTube upload no longer exists.
+
+    A deleted upload leaves its 'posted' row in the log and its mp4 on disk, so
+    without this a compilation would republish content the owner deliberately
+    pulled. Fails OPEN (returns nothing) only on an API error -- but prints a
+    warning, since silently including everything is the risky direction here.
+    """
+    import sys
+    try:
+        sys.path.insert(0, str(ROOT / "scripts"))
+        from set_privacy import get_service
+        yt = get_service()
+    except Exception as e:
+        print(f"WARNING: couldn't verify deleted videos ({e}) -- "
+              "review the list before uploading.")
+        return set()
+
+    stem2id = {}
+    for r in csv.reader(open(ROOT / "output/post_log.csv", encoding="utf-8")):
+        if len(r) >= 4 and r[2] and r[3] in ("posted", "posted_manual", "scheduled"):
+            stem2id[r[1].replace(".mp4", "")] = r[2]
+    ids = list(stem2id.values())
+    alive = set()
+    try:
+        for i in range(0, len(ids), 50):
+            alive |= {v["id"] for v in yt.videos().list(
+                part="id", id=",".join(ids[i:i + 50])).execute().get("items", [])}
+    except Exception as e:
+        print(f"WARNING: YouTube check failed ({e}) -- review before uploading.")
+        return set()
+    return {s for s, v in stem2id.items() if v not in alive}
+
+
+def rank_stories(include_used: bool = False) -> list[dict]:
+    """Stories on disk, best-performing first, saga parts grouped in order.
+
+    A saga is ranked by its BEST part's views, then its parts play in sequence
+    -- otherwise a pt2 could appear pages away from its pt1.
+    """
+    stats = json.loads((ROOT / "output/channel_stats.json").read_text())
+    views_by_id = {v["videoId"]: v["views"] for v in stats.get("videos", [])}
+    stem2views: dict[str, int] = {}
+    for r in csv.reader(open(ROOT / "output/post_log.csv", encoding="utf-8")):
+        if len(r) >= 4 and r[2] and r[3] in ("posted", "posted_manual"):
+            stem = r[1].replace(".mp4", "")
+            stem2views[stem] = max(stem2views.get(stem, 0),
+                                   views_by_id.get(r[2], 0))
+
+    used = set() if include_used else _used()
+    # Never reuse something the owner deleted -- see _deleted_stems().
+    skip = used | _deleted_stems()
+    groups: dict[str, list[Path]] = {}
+    for p in sorted((ROOT / "output").glob("*.mp4")):
+        if p.stem.startswith("_") or p.stem in skip:
+            continue
+        groups.setdefault(_base(p.stem), []).append(p)
+
+    out = []
+    for base, files in groups.items():
+        files.sort(key=lambda f: _part_no(f.stem))
+        score = max(stem2views.get(f.stem, 0) for f in files)
+        secs = sum(_duration(f) for f in files)
+        if secs <= 0:
+            continue
+        out.append({"base": base, "files": files, "views": score,
+                    "seconds": secs, "title": _title_for(files[0].stem)})
+    out.sort(key=lambda g: -g["views"])
+    return out
+
+
+def _make_card(text: str, index: int, path: Path):
+    """A numbered title card so the compilation reads as structured chapters."""
+    from PIL import Image, ImageDraw
+    from hook_card import _font
+
+    img = Image.new("RGB", (W, H), (13, 16, 23))
+    d = ImageDraw.Draw(img)
+    num_font, body = _font(120), _font(58)
+    d.text((W // 2, H // 2 - 150), f"STORY {index}", font=num_font,
+           fill=(124, 140, 255), anchor="mm")
+
+    words, lines, cur = text.split(), [], []
+    for w in words:
+        cur.append(w)
+        if d.textlength(" ".join(cur), font=body) > W - 320:
+            cur.pop()
+            lines.append(" ".join(cur))
+            cur = [w]
+        if len(lines) == 3:
+            break
+    if cur and len(lines) < 3:
+        lines.append(" ".join(cur))
+    y = H // 2 + 10
+    for ln in lines:
+        d.text((W // 2, y), ln, font=body, fill=(233, 234, 238), anchor="mm")
+        y += 78
+    img.save(path)
+
+
+def build(minutes: int = 12, dry_run: bool = False,
+          theme: str | None = None) -> Path | None:
+    ensure_ffmpeg()
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    target = minutes * 60
+
+    if theme == "auto":
+        # Prefer the biggest theme that clears the bar; fall back to mixed
+        # rather than shipping a themed video that can't keep its promise.
+        inv = themed_inventory()
+        theme = next((n for n, d in inv.items()
+                      if d["minutes"] >= MIN_THEME_MINUTES), None)
+        if theme:
+            print(f"Theme: {theme} ({inv[theme]['minutes']:.1f} min available)")
+        else:
+            best = next(iter(inv.items()), None)
+            print("No theme has enough material yet"
+                  + (f" (biggest: {best[0]} at {best[1]['minutes']:.1f} min, "
+                     f"need {MIN_THEME_MINUTES})" if best else "")
+                  + " -- building a mixed compilation.")
+
+    if theme:
+        inv = themed_inventory()
+        if theme not in inv:
+            print(f"No stories match theme '{theme}'. Available: "
+                  + ", ".join(f"{n} ({d['minutes']:.1f}m)" for n, d in inv.items()))
+            return None
+        ranked = inv[theme]["groups"]
+    else:
+        ranked = rank_stories()
+    if not ranked:
+        print("No unused rendered stories available.")
+        return None
+
+    picked, total = [], 0.0
+    for g in ranked:
+        if total >= target:
+            break
+        picked.append(g)
+        total += g["seconds"] + CARD_SECONDS
+
+    if total < 240:
+        print(f"Only {total/60:.1f} min available -- too short to clear the "
+              "3-minute Shorts threshold safely. Render more stories first.")
+        return None
+
+    print(f"Building a {total/60:.1f} min compilation from {len(picked)} stories:")
+    for i, g in enumerate(picked, 1):
+        print(f"  {i:2}. [{g['views']:>4} views] {g['title'][:56]}")
+    if dry_run:
+        return None
+
+    tmp = OUT_DIR / "_tmp"
+    tmp.mkdir(exist_ok=True)
+    segments: list[Path] = []
+    # Vertical source over a blurred, zoomed copy of itself -> fills 16:9
+    # without the black pillarbox that makes desktop playback look broken.
+    vf = (f"split[bg][fg];"
+          f"[bg]scale={W}:{H}:force_original_aspect_ratio=increase,"
+          f"crop={W}:{H},boxblur=28:3[bgb];"
+          f"[fg]scale=-1:{H}[fgs];[bgb][fgs]overlay=(W-w)/2:0")
+
+    for i, g in enumerate(picked, 1):
+        card_png = tmp / f"card_{i:02d}.png"
+        _make_card(g["title"], i, card_png)
+        card_mp4 = tmp / f"card_{i:02d}.mp4"
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-loop", "1",
+                        "-i", str(card_png), "-f", "lavfi",
+                        "-i", "anullsrc=r=44100:cl=stereo",
+                        "-t", str(CARD_SECONDS), "-c:v", "libx264",
+                        "-preset", config.FFMPEG_PRESET, "-crf", config.FFMPEG_CRF,
+                        "-pix_fmt", "yuv420p", "-r", "30",
+                        "-c:a", "aac", "-shortest", str(card_mp4)],
+                       capture_output=True, timeout=180)
+        segments.append(card_mp4)
+
+        for f in g["files"]:
+            seg = tmp / f"seg_{i:02d}_{f.stem[:20]}.mp4"
+            subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(f),
+                            "-filter_complex", vf, "-c:v", "libx264",
+                            "-preset", config.FFMPEG_PRESET, "-crf", config.FFMPEG_CRF,
+                            "-pix_fmt", "yuv420p", "-r", "30",
+                            "-c:a", "aac", "-ar", "44100", "-ac", "2",
+                            str(seg)], capture_output=True, timeout=900)
+            if seg.exists():
+                segments.append(seg)
+
+    lst = tmp / "concat.txt"
+    lst.write_text("".join(f"file '{s.as_posix()}'\n" for s in segments),
+                   encoding="utf-8")
+    from datetime import date
+    out = OUT_DIR / f"compilation_{date.today():%Y%m%d}.mp4"
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0",
+                    "-i", str(lst), "-c", "copy", str(out)],
+                   capture_output=True, timeout=900)
+    for f in tmp.iterdir():
+        f.unlink(missing_ok=True)
+    tmp.rmdir()
+
+    if not out.exists():
+        print("ffmpeg failed to produce the compilation.")
+        return None
+    dur = _duration(out)
+    print(f"\nBuilt {out.name} — {dur/60:.1f} min, "
+          f"{out.stat().st_size/1e6:.0f} MB, {W}x{H}")
+    if dur < 185:
+        print("WARNING: under ~3 minutes; YouTube may still class this a Short.")
+    _mark_used([f.stem for g in picked for f in g["files"]])
+    # stash the line-up so upload() can build chapters from it
+    (OUT_DIR / (out.stem + "_lineup.json")).write_text(
+        json.dumps([{"title": g["title"], "seconds": g["seconds"]}
+                    for g in picked], indent=1), encoding="utf-8")
+    return out
+
+
+def _chapters(picked: list[dict]) -> str:
+    """YouTube chapter timestamps. These become clickable chapters, which
+    matter a lot on a compilation -- a viewer who can jump to a story that
+    interests them stays instead of bouncing. YouTube requires the first to be
+    0:00 and at least three in total."""
+    lines, t = [], 0.0
+    for i, g in enumerate(picked, 1):
+        m, s = divmod(int(t), 60)
+        h, m = divmod(m, 60)
+        stamp = f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+        # Trim at the first sentence end, but NOT at commas -- "$4,200" would
+        # be cut to "$4". Fall back to a clean word-boundary truncation.
+        title = re.split(r"(?<=[a-z])\.\s", g["title"])[0].strip().rstrip(".")
+        if len(title) > 75:
+            title = title[:75].rsplit(" ", 1)[0] + "…"
+        lines.append(f"{stamp} — {title}")
+        t += CARD_SECONDS + g["seconds"]
+    return "\n".join(lines)
+
+
+def upload(path: Path, picked: list[dict] | None = None,
+           privacy: str | None = None, theme: str | None = None):
+    """Upload as standard long-form (16:9, >3min, no #shorts tag).
+
+    Costs no Anthropic tokens -- title/description are templates, not generated.
+    YouTube's API is free; an upload just consumes ~1600 of the 10k daily quota.
+    """
+    from youtube_upload import upload_video
+    from accounts import load_accounts
+    acc = load_accounts()[0]
+    from datetime import date
+    n = len(picked) if picked else 0
+    # Title as an EVENT, not an inventory. The big channels in this niche name
+    # the theme ("...Who Went Too Far") and append "(Reddit Compilation)";
+    # a count like "14 Reddit Stories" reads as a listing and converts worse.
+    if theme and theme in THEMES:
+        title = f"{THEMES[theme][1]} (Reddit Compilation)"
+    else:
+        title = f"Reddit Stories To Fall Asleep To (Reddit Compilation)"
+    desc = (f"{n} Reddit-style stories back to back. "
+            "Jump to any story using the chapters below.\n\n"
+            + (_chapters(picked) if picked else "")
+            + "\n\nNew stories every day — subscribe so you don't miss them.\n\n"
+              "#redditstories #storytime #reddit")
+    vid = upload_video(str(path), title=title, description=desc,
+                       tags=["reddit stories", "storytime", "compilation",
+                             "reddit", "aitah"],
+                       privacy_status=privacy or config.PRIVACY_STATUS,
+                       token_file=acc.yt_token)
+    print(f"Uploaded: https://youtube.com/watch?v={vid}")
+
+    # Custom thumbnail -- without one YouTube picks a random frame, which on a
+    # compilation means a blurred piece of gameplay as the video's face. Needs
+    # a phone-verified channel (done 2026-07-26). Never fails the upload.
+    try:
+        import thumbnail
+        mins = int(_duration(path) // 60)
+        sub = f"{n} stories · {mins} minutes" if n else f"{mins} minutes"
+        th = thumbnail.build(title.replace(" (Reddit Compilation)", ""),
+                             theme=theme,
+                             out=OUT_DIR / f"{path.stem}_thumb.jpg",
+                             subtitle=sub)
+        thumbnail.set_on_video(vid, th)
+    except Exception as e:
+        print(f"Thumbnail step skipped (video is fine): {e}")
+    return vid
+
+
+if __name__ == "__main__":
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--minutes", type=int, default=12)
+    ap.add_argument("--upload", action="store_true")
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--list", action="store_true")
+    ap.add_argument("--theme", default=None,
+                    help="theme name, or 'auto' to pick the biggest one that qualifies")
+    ap.add_argument("--themes", action="store_true", help="show themed inventory")
+    ap.add_argument("--weekly", action="store_true",
+                    help="build only if it's the chosen weekday and there's "
+                         "enough unused material; never fails the run")
+    a = ap.parse_args()
+
+    if a.weekly:
+        # Called hourly by run_all.py, so it must be a cheap no-op almost every
+        # time. Deliberately BUILDS but never uploads: long-form lives or dies
+        # on its title and thumbnail, so the owner reviews before publishing.
+        from datetime import date, datetime
+        try:
+            marker = OUT_DIR / ".last_weekly"
+            week = f"{date.today().isocalendar().year}-W{date.today().isocalendar().week}"
+            if marker.exists() and marker.read_text().strip() == week:
+                print("weekly compilation already built this week")
+                raise SystemExit(0)
+            if date.today().weekday() != COMPILATION_WEEKDAY or datetime.now().hour < 9:
+                raise SystemExit(0)
+            avail = sum(g["seconds"] for g in rank_stories()) / 60
+            if avail < MIN_MINUTES:
+                print(f"only {avail:.1f} min unused -- waiting for more material")
+                raise SystemExit(0)
+            out = build(TARGET_MINUTES, theme='auto')
+            if out:
+                OUT_DIR.mkdir(parents=True, exist_ok=True)
+                marker.write_text(week)
+                try:
+                    import sys as _s
+                    _s.path.insert(0, str(ROOT / "scripts"))
+                    from discord_notify import send_dm
+                    send_dm(f"🎬 **Weekly compilation ready** — `{out.name}` "
+                            f"({_duration(out)/60:.0f} min).\nReview it, then "
+                            f"upload with:\n`python compilation.py --upload`")
+                except Exception:
+                    pass
+        except SystemExit:
+            raise
+        except Exception as e:
+            print(f"weekly compilation skipped (non-fatal): {e}")
+        raise SystemExit(0)
+
+    if a.themes:
+        inv = themed_inventory()
+        print(f"Themed inventory (need {MIN_THEME_MINUTES} min for a themed build):")
+        for name, d in inv.items():
+            ok = "READY" if d["minutes"] >= MIN_THEME_MINUTES else "building"
+            print(f'  {name:10} {d["minutes"]:5.1f} min  {len(d["groups"]):2} stories  [{ok}]  "{d["title"]}"')
+    elif a.list:
+        used = _used()
+        av = rank_stories()
+        print(f"{len(av)} unused stories on disk ({len(used)} already used):")
+        tot = 0
+        for g in av:
+            tot += g["seconds"]
+            print(f"  [{g['views']:>4} views] {g['seconds']:5.1f}s  {g['title'][:52]}")
+        print(f"\n  total available: {tot/60:.1f} min")
+    else:
+        p = build(a.minutes, dry_run=a.dry_run, theme=a.theme)
+        if p and a.upload:
+            lu = OUT_DIR / (p.stem + "_lineup.json")
+            picked = json.loads(lu.read_text(encoding="utf-8")) if lu.exists() else None
+            upload(p, picked, theme=a.theme)

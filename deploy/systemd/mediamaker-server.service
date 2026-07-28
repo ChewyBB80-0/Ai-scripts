@@ -1,0 +1,16 @@
+[Unit]
+Description=Media Maker control server (dashboard + chat API)
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/media_maker
+ExecStart=%h/media_maker/venv/bin/python %h/media_maker/control_server.py
+EnvironmentFile=%h/media_maker/.env
+# This is the class of failure that plagued the Windows host: a service dies
+# quietly and nothing notices. systemd just brings it back.
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

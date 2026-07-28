@@ -1,0 +1,33 @@
+# ---- SECRETS: never commit ----------------------------------------------
+# The .bat launchers have API keys baked in; *.template.bat versions with
+# placeholders are committed instead. A secret that lands in git history stays
+# retrievable even after a later commit deletes it -- keep it out from the start.
+.env
+scripts/setup_env.bat
+scripts/start_server.bat
+scripts/start_control.bat
+scripts/start_bot.bat
+scripts/run_daily.bat
+token*.json
+client_secret*.json
+tiktok_token.json
+
+# ---- generated ----------------------------------------------------------
+venv/
+__pycache__/
+*.pyc
+output/
+dashboard/live.html
+dashboard/history.json
+
+# ---- large / not ours to redistribute -----------------------------------
+# NOTE: gitignore has no trailing-comment support -- a comment on the same
+# line becomes part of the pattern and silently matches nothing.
+bin/
+footage/
+footage_satisfying/
+music/
+voice/
+*.mp4
+*.mp3
+*.bak

@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the Media Maker pipeline hourly
+
+[Timer]
+OnCalendar=hourly
+# Fire a missed run on wake instead of skipping the slot -- a sleeping host is
+# exactly why the 03:23 slot was lost on 2026-07-27.
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,14 @@
+[Unit]
+Description=Media Maker Discord bot
+After=network-online.target mediamaker-server.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/media_maker
+ExecStart=%h/media_maker/venv/bin/python %h/media_maker/discord_bot.py
+EnvironmentFile=%h/media_maker/.env
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
