@@ -486,6 +486,7 @@ def _fast_reply(text: str):
         return ("**Quick commands** (free, instant):\n"
                 "• `stats` — views, subs, top video\n"
                 "• `recent` — last 8 posts\n"
+                "• `health` — is anything broken?\n"
                 "• `autonomy` — is auto-posting on?\n"
                 "• `sync` — force-refresh the dashboard\n"
                 "_Or just tell me what to do_ (post a video, reply to comments, "
@@ -515,6 +516,33 @@ def _fast_reply(text: str):
                 f"_synced {sync}_")
         except Exception:
             return None
+
+    # health / preflight -- run the same checks the hourly monitor runs, on
+    # demand. Local + API checks only, so it costs no Claude tokens.
+    if has("health", "preflight", "everything ok", "everything okay",
+           "is it working", "all good", "system check", "healthcheck"):
+        lines = []
+        try:
+            import health_check
+            probs = health_check.collect()
+            if probs:
+                lines.append("🚨 **Problems found:**")
+                lines += [f"• {p}" for p in probs]
+            else:
+                lines.append("✅ **Healthy** — no problems detected.")
+        except Exception as e:
+            lines.append(f"⚠️ Health check failed to run: {str(e)[:120]}")
+        # a couple of at-a-glance numbers so the reply is useful either way
+        try:
+            import bot as _b
+            import config as _c
+            lines.append(
+                f"_weekly {_b.this_weeks_upload_count()}/{_c.WEEKLY_POST_TARGET} · "
+                f"today {_b.todays_story_count()}/{_c.DAILY_POST_TARGET} stories · "
+                f"autonomy {'ON' if 'ON' in t_get_autonomy(None) else 'OFF'}_")
+        except Exception:
+            pass
+        return "\n".join(lines)
 
     # force a dashboard sync -- pull fresh stats + rebuild live.html
     if has("sync", "refresh dash", "refresh the dash", "update dash",
