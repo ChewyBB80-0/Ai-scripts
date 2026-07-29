@@ -1,0 +1,14 @@
+[Unit]
+Description=Send the daily report at 08:00 local time
+
+[Timer]
+# Local time, so it tracks the machine's timezone (America/New_York) and
+# follows EST/EDT automatically rather than drifting an hour twice a year.
+OnCalendar=*-*-* 08:00:00
+# If the machine was asleep or off at 08:00, send on the next wake instead of
+# skipping the day entirely.
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

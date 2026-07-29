@@ -124,6 +124,7 @@ systemctl --user enable --now mediamaker-bot.service
 systemctl --user enable --now mediamaker.timer
 systemctl --user enable --now mediamaker-stats.timer
 systemctl --user enable --now mediamaker-health.timer
+systemctl --user enable --now mediamaker-report.timer
 ```
 
 Five units, and the split matters:
@@ -135,6 +136,7 @@ Five units, and the split matters:
 | `mediamaker.timer` | full pipeline, hourly | generates and posts |
 | `mediamaker-stats.timer` | stats refresh, 15 min | keeps the dashboard live without touching upload quota |
 | `mediamaker-health.timer` | health check, 2h | **must not** be a pipeline step -- a monitor invoked by the thing it monitors cannot report that thing being broken |
+| `mediamaker-report.timer` | daily report, 08:00 local | same reason -- as a pipeline step it went silent when the pipeline did |
 
 
 The units use `%h` for your home directory, so they work regardless of username

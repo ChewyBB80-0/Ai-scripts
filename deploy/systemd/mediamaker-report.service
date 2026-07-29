@@ -1,0 +1,8 @@
+[Unit]
+Description=Media Maker daily Discord report
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/media_maker
+EnvironmentFile=%h/media_maker/.env
+ExecStart=%h/media_maker/venv/bin/python scripts/discord_notify.py report
