@@ -122,7 +122,20 @@ systemctl --user daemon-reload
 systemctl --user enable --now mediamaker-server.service
 systemctl --user enable --now mediamaker-bot.service
 systemctl --user enable --now mediamaker.timer
+systemctl --user enable --now mediamaker-stats.timer
+systemctl --user enable --now mediamaker-health.timer
 ```
+
+Five units, and the split matters:
+
+| unit | does | why separate |
+|---|---|---|
+| `mediamaker-server` | dashboard + chat API | long-running |
+| `mediamaker-bot` | Discord control | long-running |
+| `mediamaker.timer` | full pipeline, hourly | generates and posts |
+| `mediamaker-stats.timer` | stats refresh, 15 min | keeps the dashboard live without touching upload quota |
+| `mediamaker-health.timer` | health check, 2h | **must not** be a pipeline step -- a monitor invoked by the thing it monitors cannot report that thing being broken |
+
 
 The units use `%h` for your home directory, so they work regardless of username
 as long as the project sits at `~/media_maker`.
