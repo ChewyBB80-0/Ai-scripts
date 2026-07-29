@@ -1,0 +1,12 @@
+[Unit]
+Description=Media Maker health check (independent of the pipeline)
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/media_maker
+EnvironmentFile=%h/media_maker/.env
+# Runs on its OWN timer, not as a run_all.py step. A monitor invoked by the
+# thing it monitors cannot report that thing being broken -- which is exactly
+# what happened when a bad interpreter path silently killed every pipeline
+# step, health check included, for 19 hours.
+ExecStart=%h/media_maker/venv/bin/python health_check.py

@@ -101,6 +101,19 @@ for f, why, required in [
     check(f"file {f}", PASS if p.exists() else (FAIL if required else WARN),
           why if p.exists() else f"missing -- {why}")
 
+# --- the pipeline can actually launch its own steps -----------------------
+# run_all.py shells out to a venv interpreter whose path differs per OS. A
+# Windows path on a Linux host meant every step silently failed to start while
+# systemd still reported success -- 19h of no posts before anyone noticed.
+try:
+    sys.path.insert(0, str(ROOT))
+    import run_all
+    _ok = Path(run_all.PY).exists()
+    check("pipeline interpreter", PASS if _ok else FAIL,
+          run_all.PY if _ok else f"{run_all.PY} DOES NOT EXIST -- every step will fail silently")
+except Exception as e:
+    check("pipeline interpreter", FAIL, f"could not resolve: {str(e)[:70]}")
+
 # --- content the renderer needs -------------------------------------------
 # Recursive: footage is organised into themed subfolders (night_1080/,
 # bright_biomes/, orbital_day/, gta/) and picked per video by

@@ -18,7 +18,13 @@ from ffmpeg_setup import ensure_ffmpeg
 ensure_ffmpeg()
 os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 
-PY = str(ROOT / "venv" / "Scripts" / "python.exe")
+# The venv interpreter lives in a different place per OS -- Scripts/python.exe
+# on Windows, bin/python on Linux. Hardcoding the Windows path meant every step
+# silently failed to launch on the Ubuntu host (19h of no posts before it was
+# noticed), so resolve it per platform and fall back to the interpreter that is
+# already running us.
+_VENV_PY = ROOT / "venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+PY = str(_VENV_PY) if _VENV_PY.exists() else sys.executable
 STEPS = [
     ["bot.py"],
     ["comment_replies.py"],          # no-op until ENABLE_COMMENT_REPLIES=True
