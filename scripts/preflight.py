@@ -27,6 +27,17 @@ def check(name: str, status: str, detail: str = ""):
     results.append((status, name, detail))
 
 
+def _env_hint() -> str:
+    """Platform-correct remedy. Telling a Linux host to "run setup_env.bat"
+    sent someone chasing a token-transfer problem that did not exist -- the
+    variables were simply never sourced into the shell."""
+    if os.name == "nt":
+        return r"Run scripts\setup_env.bat then sign out/in."
+    return ("Source the env file first:  set -a; . ~/media_maker/.env; set +a "
+            "-- systemd services load it automatically, so this only affects "
+            "interactive shells.")
+
+
 def _mask(v: str) -> str:
     return f"{v[:6]}...{v[-4:]} ({len(v)} chars)" if len(v) > 14 else "(short!)"
 
@@ -85,7 +96,7 @@ OPTIONAL = {
 for k, why in REQUIRED.items():
     val = os.environ.get(k, "")
     check(f"env {k}", PASS if val else FAIL,
-          _mask(val) if val else f"MISSING -- {why}. Run scripts\\setup_env.bat then sign out/in.")
+          _mask(val) if val else f"MISSING -- {why}. {_env_hint()}")
 for k, why in OPTIONAL.items():
     val = os.environ.get(k, "")
     check(f"env {k}", PASS if val else WARN, _mask(val) if val else f"not set -- {why}")
