@@ -417,9 +417,39 @@ SYSTEM = (
     "and action-oriented. Confirm what you did in one line.")
 
 
+# Refresh the dashboard data if it's older than this when someone opens the
+# page. A background timer keeps it broadly current; this makes it current the
+# moment you actually look, which is the only time it matters.
+STALE_MINUTES = 8
+
+
+def _stats_age_minutes() -> float:
+    """Minutes since the stats were last fetched (inf if never/unreadable)."""
+    import time
+    try:
+        newest = max((ROOT / "output" / f).stat().st_mtime
+                     for f in ("channel_stats.json", "ig_stats.json"))
+        return (time.time() - newest) / 60
+    except Exception:
+        return float("inf")
+
+
 @app.route("/")
 def index():
+    # Kick a refresh off in the background and serve the current page straight
+    # away -- blocking on three API calls would make the dashboard feel broken.
+    # The page's own 5-minute auto-reload then picks the new numbers up.
+    if not _busy["syncing"] and _stats_age_minutes() > STALE_MINUTES:
+        _busy["syncing"] = True
+        threading.Thread(target=_run_sync, daemon=True).start()
     return send_file(ROOT / "dashboard" / "live.html")
+
+
+@app.route("/api/stats-age")
+def stats_age():
+    """Lets the page decide whether it's worth reloading."""
+    return jsonify({"ageMinutes": round(_stats_age_minutes(), 1),
+                    "syncing": _busy["syncing"]})
 
 
 @app.route("/api/upload", methods=["POST"])

@@ -516,8 +516,24 @@ function saveHist(){try{localStorage.setItem(HK,JSON.stringify(hist.slice(-40)))
 hist.forEach(m=>bubble(m.role==='user'?'user':'bot',typeof m.content==='string'?m.content:'(attachments)'));
 // Data auto-refresh WITHOUT interrupting you: only reloads if you're not on
 // the Assistant tab and not mid-typing / mid-attachment.
-setInterval(()=>{const onAssist=document.querySelector('.tab[data-t=assistant]')?.classList.contains('on');
- if(!onAssist&&!cin.value&&!pend.length)location.reload()},300000);
+// Poll for FRESH data every 60s and reload only when the numbers have
+// actually changed -- a blind 5-minute reload wastes work and can interrupt
+// you mid-scroll for nothing. Still never reloads while you're using the
+// Assistant tab or have text/attachments pending.
+let lastAge=null;
+setInterval(async()=>{
+ const onAssist=document.querySelector('.tab[data-t=assistant]')?.classList.contains('on');
+ if(onAssist||cin.value||pend.length)return;
+ try{
+  const r=await fetch('/api/stats-age',{cache:'no-store'});
+  const j=await r.json();
+  // age resets toward 0 when a refresh lands -> that's the signal to reload
+  if(lastAge!==null&&j.ageMinutes<lastAge)location.reload();
+  lastAge=j.ageMinutes;
+  const s=$('sync');
+  if(s&&j.syncing)s.textContent='refreshing…';
+ }catch(e){}
+},60000);
 const chips=$('chips'),cfile=$('cfile');
 function drawChips(){chips.innerHTML=pend.map((a,i)=>`<span class="pill" style="cursor:pointer" data-i="${i}" title="click to remove">📄 ${a.name} ✕</span>`).join('');
  chips.querySelectorAll('[data-i]').forEach(el=>el.onclick=()=>{pend.splice(+el.dataset.i,1);drawChips()})}

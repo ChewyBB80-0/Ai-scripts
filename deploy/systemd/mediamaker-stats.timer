@@ -1,0 +1,12 @@
+[Unit]
+Description=Refresh dashboard stats every 15 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=15min
+# ~96 runs/day. A stats pass costs only a few YouTube API units (an upload
+# costs 1600), so this is a rounding error against the 10k daily quota.
+Persistent=true
+
+[Install]
+WantedBy=timers.target
