@@ -127,7 +127,7 @@ systemctl --user enable --now mediamaker-health.timer
 systemctl --user enable --now mediamaker-report.timer
 ```
 
-Five units, and the split matters:
+Six units, and the split matters:
 
 | unit | does | why separate |
 |---|---|---|
