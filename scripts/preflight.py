@@ -19,6 +19,26 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+# Load the .env file ourselves if the variables aren't already exported.
+# systemd feeds it to the services via EnvironmentFile=, but an interactive
+# shell has nothing unless you remember to source it -- and a preflight that
+# reports "MISSING" for a perfectly good credential is worse than useless: it
+# sends you hunting a transfer problem that doesn't exist.
+_envfile = ROOT / ".env"
+if _envfile.exists():
+    _loaded = []
+    for _line in _envfile.read_text(encoding="utf-8", errors="replace").splitlines():
+        _line = _line.strip()
+        if not _line or _line.startswith("#") or "=" not in _line:
+            continue
+        _k, _, _v = _line.partition("=")
+        _k, _v = _k.strip(), _v.strip().strip("'\"")
+        if _k and _v and not os.environ.get(_k):
+            os.environ[_k] = _v
+            _loaded.append(_k)
+    if _loaded:
+        print(f"(loaded {len(_loaded)} variables from .env)")
+
 PASS, FAIL, WARN = "PASS", "FAIL", "WARN"
 results: list[tuple[str, str, str]] = []
 
