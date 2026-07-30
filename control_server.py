@@ -656,13 +656,32 @@ def chat():
         text = conv[-1]["content"]
         conv[-1]["content"] = _attachment_blocks(atts) + [{"type": "text", "text": text or "(see attachments)"}]
     mem = _load_memory()
-    sys_prompt = SYSTEM
+    # Cache the stable prefix. Render order is tools -> system -> messages, so a
+    # breakpoint on a system block covers the tool definitions too -- together
+    # ~4.3k tokens that were being re-billed at full price on every message and
+    # on every tool round-trip below.
+    #
+    # Two breakpoints, one per stability boundary. The first covers tools +
+    # SYSTEM, neither of which changes at runtime, so it still hits after the
+    # user saves a memory note. The second adds memory, which changes only on
+    # `remember`/`forget`. Memory goes last for that reason: putting it earlier
+    # would invalidate the tools and system prompt behind it.
+    #
+    # Worth it even for a one-off question: a cache write costs ~1.25x and a
+    # read ~0.1x, so this pays for itself on the second call -- and any message
+    # that triggers a tool makes at least two.
+    system = [{"type": "text", "text": SYSTEM,
+               "cache_control": {"type": "ephemeral"}}]
     if mem:
-        sys_prompt += "\n\nYOUR PERSISTENT MEMORY (notes you saved in past conversations):\n" + \
-            "\n".join(f"- [{n['d']}] {n['note']}" for n in mem[-40:])
+        system.append({
+            "type": "text",
+            "text": "YOUR PERSISTENT MEMORY (notes you saved in past conversations):\n"
+                    + "\n".join(f"- [{n['d']}] {n['note']}" for n in mem[-40:]),
+            "cache_control": {"type": "ephemeral"},
+        })
     for _ in range(6):  # cap tool round-trips
         r = client.messages.create(model="claude-sonnet-5", max_tokens=1024,
-                                   system=sys_prompt, tools=TOOLS, messages=conv,
+                                   system=system, tools=TOOLS, messages=conv,
                                    thinking={"type": "disabled"})
         conv.append({"role": "assistant", "content": r.content})
         if r.stop_reason == "tool_use":
