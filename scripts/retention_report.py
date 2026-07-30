@@ -32,15 +32,11 @@ sys.path.insert(0, str(ROOT))
 
 def _services():
     from googleapiclient.discovery import build
-    from google.oauth2.credentials import Credentials
-    from google.auth.transport.requests import Request
-    from youtube_upload import SCOPES
+    from youtube_upload import load_credentials
 
-    # Load with the token's OWN scopes, not the (now larger) SCOPES list.
-    # Passing the expanded list makes the refresh request a scope the refresh
-    # token was never granted, which fails as "invalid_scope: Bad Request" -- an
-    # opaque traceback instead of the actionable "you need to re-auth" below.
-    creds = Credentials.from_authorized_user_file(str(ROOT / "token.json"))
+    # load_credentials refreshes with the token's OWN scopes -- see the note
+    # there on why handing it the wider SCOPES list breaks the refresh.
+    creds = load_credentials(str(ROOT / "token.json"))
     have = set(getattr(creds, "scopes", None) or [])
     if not any("yt-analytics" in s for s in have):
         raise SystemExit(
@@ -50,8 +46,6 @@ def _services():
             "(youtube_upload.SCOPES already requests it.)\n\n"
             "Or read it by hand: YouTube Studio -> a video -> Analytics ->\n"
             "'Average percentage viewed'.")
-    if creds.expired and creds.refresh_token:
-        creds.refresh(Request())
     if not creds.valid:
         raise SystemExit("Token invalid -- run: python add_channel.py parkourflux")
     return (build("youtube", "v3", credentials=creds),

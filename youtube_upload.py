@@ -30,9 +30,13 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from googleapiclient.errors import HttpError
 
+# SCOPES is what a NEW authorization asks for. It is deliberately NOT used when
+# loading an existing token -- see load_credentials() for why that distinction
+# is load-bearing.
+#
 # youtube.upload = post videos; youtube.force-ssl = read/reply to comments
-# (needed by comment_replies.py). Re-auth (add_channel.py) after adding the
-# second scope so the token is granted both. Uploads keep working meanwhile.
+# (needed by comment_replies.py). Re-auth (add_channel.py) after adding a new
+# scope so the token is granted it. Uploads keep working meanwhile.
 SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube.force-ssl",
@@ -43,27 +47,57 @@ SCOPES = [
     # (add_channel.py parkourflux) on a machine with a browser.
     "https://www.googleapis.com/auth/yt-analytics.readonly",
 ]
+UPLOAD_SCOPE = "https://www.googleapis.com/auth/youtube.upload"
 CLIENT_SECRETS_FILE = "client_secret.json"
 TOKEN_FILE = "token.json"
+
+
+def load_credentials(token_file: str = TOKEN_FILE, required: str | None = None):
+    """Load a stored token, refreshing it with the scopes it ACTUALLY has.
+
+    Never pass the module-level SCOPES to from_authorized_user_file. google-auth
+    replays whatever scope list it is handed in the refresh grant, and Google
+    rejects a refresh that asks for a scope the refresh token was never granted:
+
+        ('invalid_scope: Bad Request', {'error': 'invalid_scope', ...})
+
+    So *widening* SCOPES retroactively breaks every token already on disk, at
+    its next refresh, including for operations that never needed the new scope.
+    Adding yt-analytics.readonly took YouTube uploads down exactly this way --
+    the access token stayed valid for its last hour, then every run failed.
+
+    Loading with the token's own scopes keeps existing tokens working and lets
+    a new scope take effect whenever someone next re-auths, which is the
+    behaviour the SCOPES comment always claimed.
+    """
+    creds = Credentials.from_authorized_user_file(token_file)
+    if required and required not in (creds.scopes or []):
+        raise RuntimeError(
+            f"{token_file} was never granted {required}.\n"
+            f"Re-auth once on a machine with a browser: python add_channel.py <account_id>"
+        )
+    if creds.expired and creds.refresh_token:
+        creds.refresh(Request())
+        # Persist the fresh access token so the next run reuses it rather than
+        # spending another refresh. to_json() carries the token's own scopes,
+        # so writing back never widens or narrows the grant.
+        Path(token_file).write_text(creds.to_json())
+    return creds
 
 
 def get_authenticated_service(token_file: str = TOKEN_FILE):
     creds = None
     if Path(token_file).exists():
-        creds = Credentials.from_authorized_user_file(token_file, SCOPES)
+        creds = load_credentials(token_file, required=UPLOAD_SCOPE)
 
     if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            if not Path(CLIENT_SECRETS_FILE).exists():
-                raise FileNotFoundError(
-                    f"{CLIENT_SECRETS_FILE} not found. Download it from the "
-                    "Google Cloud Console (Credentials -> your OAuth Client ID)."
-                )
-            flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRETS_FILE, SCOPES)
-            creds = flow.run_local_server(port=0)  # opens a browser for one-time auth
-
+        if not Path(CLIENT_SECRETS_FILE).exists():
+            raise FileNotFoundError(
+                f"{CLIENT_SECRETS_FILE} not found. Download it from the "
+                "Google Cloud Console (Credentials -> your OAuth Client ID)."
+            )
+        flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRETS_FILE, SCOPES)
+        creds = flow.run_local_server(port=0)  # opens a browser for one-time auth
         Path(token_file).write_text(creds.to_json())
 
     return build("youtube", "v3", credentials=creds)
