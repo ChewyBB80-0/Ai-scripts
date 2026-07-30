@@ -32,7 +32,18 @@ REVIEW_MODE = False
 # Claude condenses/cleans each) instead of fully AI-inventing them. Needs
 # REDDIT_CLIENT_ID / REDDIT_CLIENT_SECRET env vars (free Reddit "script" app);
 # without them it silently falls back to AI-generated. See reddit_source.py.
-USE_REDDIT_SOURCE = True
+# OFF -- Reddit DENIED the API application (2026-07-29). This was never used:
+# 0 of the posts in the log came from it, because without credentials it always
+# fell back to AI generation. Keeping it True just made the fallback look like a
+# pending feature.
+#
+# Not worth pursuing further. Every breakout this channel has had was
+# AI-written (354 / 252 / 123 / 81 views), so real posts were an untested
+# assumption, and republishing someone's post carries a copyright problem
+# regardless of how it is obtained. Scraping around the denial is also against
+# Reddit's ToS. The code stays in reddit_source.py in case the API is ever
+# granted; flip this back to True if so.
+USE_REDDIT_SOURCE = False
 
 # End-of-video call-to-action: append a spoken + captioned follow ask to the
 # last part / single (non-final saga parts already say "follow for part X").
