@@ -36,6 +36,12 @@ from googleapiclient.errors import HttpError
 SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube.force-ssl",
+    # Read-only analytics: retention, traffic sources, audience. The Data API
+    # gives view counts but NOT average-percentage-viewed, and retention is the
+    # number that separates "nobody sees it" from "they see it and don't
+    # convert" -- the two need opposite fixes. Adding it needs one re-auth
+    # (add_channel.py parkourflux) on a machine with a browser.
+    "https://www.googleapis.com/auth/yt-analytics.readonly",
 ]
 CLIENT_SECRETS_FILE = "client_secret.json"
 TOKEN_FILE = "token.json"
