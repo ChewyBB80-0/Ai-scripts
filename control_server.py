@@ -200,6 +200,8 @@ TOOLS = [
      "input_schema": {"type": "object", "properties": {}}},
     {"name": "post_video", "description": "Generate and post a NEW story video right now. Choose the platform: 'both' (default), 'youtube', or 'instagram'. Optional topic hint. If the user asks to post but doesn't say where, ask which platform(s) first.",
      "input_schema": {"type": "object", "properties": {"topic": {"type": "string", "description": "optional topic/theme"}, "platform": {"type": "string", "enum": ["both", "youtube", "instagram"], "description": "which platform(s) to post to (default both)"}}}},
+    {"name": "update", "description": "Deploy the latest pushed code to this machine (git pull, fast-forward only). Use when the user says update/deploy/pull/'get the fix', or when a bug has been fixed remotely and needs to reach the box. Safe: it never discards local work, and reports if a restart is still needed.",
+     "input_schema": {"type": "object", "properties": {}}},
     {"name": "set_autonomy", "description": "Turn autonomous posting (every 2 hours) on or off.",
      "input_schema": {"type": "object", "properties": {"on": {"type": "boolean"}}, "required": ["on"]}},
     {"name": "get_autonomy", "description": "Check if autonomous posting is currently on.",
@@ -278,7 +280,31 @@ def _t_reply_comments(inp):
         return f"{mode} 0 replies (no new comments)."
     breakdown = ", ".join(f"{k}:{v}" for k, v in totals.items() if v)
     return f"{mode} {n} repl{'y' if n == 1 else 'ies'} across {breakdown}"
+def t_update(_):
+    """Deploy the latest pushed code to this box, from Discord or the dashboard.
+
+    The reason this tool exists: when the upload pipeline broke, the fix was
+    committed within the hour and still could not be deployed, because the only
+    way in was standing at the machine. Now it is one message from a phone.
+    """
+    import self_update
+    changed, msg, files = self_update.pull()
+    if not changed:
+        return msg
+    lines = [msg, f"{len(files)} file(s) changed."]
+    lines.append("Pipeline steps use the new code from the next run "
+                 "(hourly, or say 'post a video' to exercise it now).")
+    stale = self_update.stale_units(files)
+    if stale:
+        # Restarting these from inside this request would kill the process
+        # answering it, so report rather than act.
+        lines.append(f"Still on old code until restarted: {', '.join(stale)} "
+                     f"-- `systemctl --user restart {' '.join(stale)}` on the box.")
+    return "\n".join(lines)
+
+
 DISPATCH = {"get_stats": t_get_stats, "post_video": t_post_video,
+            "update": t_update,
             "set_autonomy": t_set_autonomy, "get_autonomy": t_get_autonomy,
             "recent_posts": t_recent, "move_file": t_move_file,
             "list_uploads": t_list_uploads, "remember": t_remember,

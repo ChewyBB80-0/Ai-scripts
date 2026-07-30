@@ -199,3 +199,26 @@ automatically — the control server detects the platform.
 - **The dashboard** binds to localhost:8000. To view it from another machine use
   an SSH tunnel (`ssh -L 8000:localhost:8000 user@playbox`) rather than exposing
   the port — it can trigger posts.
+- **Deploying a fix without being at the box.** `run_all.py` fast-forwards the
+  checkout at the top of every hourly run, and the Discord assistant has an
+  `update` tool ("update" / "deploy the fix") that pulls on demand. Both go
+  through `self_update.py`: fast-forward only, refused on a dirty tree, and
+  never fatal — a failed pull logs and the run continues on existing code.
+
+  Two things it deliberately will not do, because both need a human:
+
+  1. **It only pulls the branch the box is checked out on.** A fix pushed to a
+     feature branch does not reach a box tracking `main` until it is merged.
+     `git -C ~/media_maker rev-parse --abbrev-ref HEAD` says which branch the
+     box is actually on.
+  2. **It does not restart `mediamaker-server` or `mediamaker-bot`.** Pipeline
+     steps are fresh subprocesses so they pick up new code immediately, but
+     those two keep running what they booted with. The pull reports when they
+     are stale; restarting the server from inside a request it is answering
+     would kill the reply. `systemctl --user restart mediamaker-server
+     mediamaker-bot` when it says so.
+
+  This needs the box's git remote to authenticate non-interactively (SSH key or
+  a stored credential helper). `GIT_TERMINAL_PROMPT=0` means a remote that wants
+  a password fails in seconds rather than hanging the hourly run on a prompt
+  nobody is there to answer.

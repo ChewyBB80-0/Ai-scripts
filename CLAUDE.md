@@ -83,7 +83,8 @@ reviewed and posted without issues.
 | `approve.py` | Manual review-and-post CLI for videos awaiting approval |
 | `youtube_upload.py` | OAuth + resumable upload to YouTube |
 | `config.py` | Review mode switch + limits |
-| `run_all.py` | Entry point for the scheduled task (MediaMakerHourly) -- runs `bot.py`, comment replies, coverage check, stats, dashboard, Discord report |
+| `run_all.py` | Entry point for the scheduled task (MediaMakerHourly) -- self-updates, then runs `bot.py`, comment replies, coverage check, stats, dashboard, Discord report |
+| `self_update.py` | Fast-forward pull so a pushed fix reaches the box unattended (used by `run_all.py` and the Discord `update` tool) |
 | `coverage_check.py` | Flags videos that reached only one of YouTube/Instagram |
 | `tiktok_upload.py` / `tiktok_queue.py` | TikTok posting + the Discord tap-to-approve gate |
 | `output/pending_review/` | Videos waiting for your approval |
