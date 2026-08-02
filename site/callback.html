@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Authorisation code — ParkourFlux</title>
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/">Parkour<span>Flux</span></a>
+    <nav class="site">
+      <a href="/">Home</a>
+      <a href="/how-it-works">How it works</a>
+      <a href="/tiktok">TikTok integration</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/terms">Terms</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <p class="eyebrow">OAuth redirect</p>
+  <h1>Authorisation code</h1>
+  <p class="lede" id="lede">Reading the code from the URL&hellip;</p>
+
+  <div class="card">
+    <h3>Code</h3>
+    <p><code id="code" style="word-break: break-all;">&mdash;</code></p>
+    <p><button id="copy" type="button">Copy code</button></p>
+  </div>
+
+  <div class="note">
+    <p>
+      This page is the OAuth redirect target for the ParkourFlux publishing
+      tool. It displays the authorisation code returned by the provider so the
+      operator can paste it back into the tool. The code is read from the URL
+      in your browser and is <strong>not</strong> sent anywhere, stored, or
+      logged by this page.
+    </p>
+  </div>
+
+  <p><a href="/">&larr; Back to ParkourFlux</a></p>
+</main>
+
+<footer class="site">
+  <div class="wrap">
+    <div class="foot-links">
+      <a href="/">Home</a>
+      <a href="/how-it-works">How it works</a>
+      <a href="/tiktok">TikTok integration</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/terms">Terms</a>
+    </div>
+    <p>ParkourFlux &middot; independent short-form video.</p>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var params = new URLSearchParams(window.location.search);
+  var code = params.get("code");
+  var error = params.get("error") || params.get("error_description");
+  var el = document.getElementById("code");
+  var lede = document.getElementById("lede");
+
+  if (code) {
+    el.textContent = code;
+    lede.textContent = "Copy this code and paste it back into the tool.";
+  } else if (error) {
+    el.textContent = "—";
+    lede.textContent = "Authorisation failed: " + error;
+  } else {
+    el.textContent = "—";
+    lede.textContent = "No authorisation code was present in this URL.";
+  }
+
+  document.getElementById("copy").addEventListener("click", function () {
+    if (!code) return;
+    navigator.clipboard.writeText(code).then(function () {
+      var b = document.getElementById("copy");
+      b.textContent = "Copied";
+      setTimeout(function () { b.textContent = "Copy code"; }, 1500);
+    });
+  });
+})();
+</script>
+
+</body>
+</html>

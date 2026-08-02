@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How it works — ParkourFlux</title>
+<meta name="description" content="How a ParkourFlux video is produced: writing, narration, caption timing, rendering, review and publishing.">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/">Parkour<span>Flux</span></a>
+    <nav class="site">
+      <a href="/">Home</a>
+      <a href="/how-it-works" aria-current="page">How it works</a>
+      <a href="/tiktok">TikTok integration</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/terms">Terms</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <p class="eyebrow">Production</p>
+  <h1>How a video gets made</h1>
+  <p class="lede">
+    ParkourFlux is produced by one person with an in-house publishing tool.
+    The tool handles the repetitive parts — drafting, voicing, timing,
+    rendering, uploading — so the work is a review step rather than an
+    afternoon of editing.
+  </p>
+
+  <h2>The pipeline</h2>
+  <ol class="steps">
+    <li>
+      <strong>Write the story</strong>
+      A short piece of original fiction, 30–60 seconds when read aloud,
+      structured in short beats that each end on a turn. Longer pieces are
+      split at beat boundaries into a numbered series released over
+      consecutive days.
+    </li>
+    <li>
+      <strong>Narrate it</strong>
+      The script is read by a synthetic voice, which also returns per-word
+      timings used in the next step.
+    </li>
+    <li>
+      <strong>Time the captions</strong>
+      Those word timings are turned into a caption track, so the on-screen
+      text lands exactly with the narration rather than drifting.
+    </li>
+    <li>
+      <strong>Assemble the video</strong>
+      ffmpeg composites the narration, the caption track, a title card and
+      looping gameplay footage into a 1080&times;1920 vertical video at 30fps.
+    </li>
+    <li>
+      <strong>Review</strong>
+      The finished file is held for approval before anything is published.
+      Nothing is released without a person looking at it.
+    </li>
+    <li>
+      <strong>Publish</strong>
+      Approved videos are uploaded to the channel's own accounts, with a
+      per-platform caption and hashtags. Every attempt — success or failure —
+      is logged.
+    </li>
+  </ol>
+
+  <h2>The footage</h2>
+  <p>
+    Backgrounds are gameplay clips kept in a local library and cut into short
+    segments so no two videos look identical. The footage is visual filler
+    chosen to hold attention on a phone screen; the story carries the video.
+  </p>
+
+  <h2>Rate limits and safeguards</h2>
+  <p>
+    The tool is deliberately conservative. It produces at most one video per
+    scheduled run, enforces a daily publishing ceiling per platform, refuses
+    to publish two videos under the same story title, and stops and logs on
+    any API failure instead of retrying in a loop.
+  </p>
+
+  <div class="scroll-x">
+    <table>
+      <thead>
+        <tr><th>Guardrail</th><th>Behaviour</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>One video per run</td>
+          <td>A scheduled run produces a single video, never a batch.</td>
+        </tr>
+        <tr>
+          <td>Daily ceiling</td>
+          <td>Publishing stops before the platform's quota is reached.</td>
+        </tr>
+        <tr>
+          <td>No duplicate titles</td>
+          <td>The same story is never published twice.</td>
+        </tr>
+        <tr>
+          <td>Fail closed</td>
+          <td>An API error is logged and the run stops — no retry storms.</td>
+        </tr>
+        <tr>
+          <td>Human review</td>
+          <td>Finished videos are approved before release.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Content standards</h2>
+  <p>The tool will not produce, and the channel does not publish:</p>
+  <ul>
+    <li>Content depicting or naming real people.</li>
+    <li>Content that sexualises or targets minors.</li>
+    <li>Fiction framed deceptively as verified fact. Stories are presented as
+      stories.</li>
+  </ul>
+  <p>
+    Videos are labelled as entertainment. The narration is synthetic and the
+    stories are invented.
+  </p>
+</main>
+
+<footer class="site">
+  <div class="wrap">
+    <div class="foot-links">
+      <a href="/">Home</a>
+      <a href="/how-it-works">How it works</a>
+      <a href="/tiktok">TikTok integration</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/terms">Terms</a>
+    </div>
+    <p>ParkourFlux &middot; independent short-form video. Contact:
+      <a href="mailto:REPLACE-WITH-YOUR-CONTACT-EMAIL">REPLACE-WITH-YOUR-CONTACT-EMAIL</a>
+    </p>
+  </div>
+</footer>
+
+</body>
+</html>
