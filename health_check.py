@@ -157,6 +157,15 @@ def collect() -> list[str]:
             c.refresh(Request())
         if not c.valid:
             problems.append("**YouTube token is invalid** -- re-run add_channel.py.")
+        # A token can refresh cleanly and still be missing the scope uploading
+        # needs -- which is exactly how the invalid_scope outage looked from
+        # here: this check passed while every upload failed. Compare what the
+        # token was granted against what posting actually requires.
+        from youtube_upload import UPLOAD_SCOPE
+        if UPLOAD_SCOPE not in (c.scopes or []):
+            problems.append("**YouTube token lacks the upload scope** -- "
+                            "uploads will fail while everything else looks "
+                            "healthy. Re-auth: python add_channel.py parkourflux")
     except Exception as e:
         problems.append(f"**YouTube token check failed:** {str(e)[:90]}")
 

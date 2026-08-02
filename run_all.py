@@ -76,10 +76,43 @@ def _cleanup_old_renders(log):
               f"(>{config.CLEANUP_KEEP_DAYS}d) ---\n")
 
 
+def _self_update(log):
+    """Fast-forward to the latest pushed code before running the pipeline.
+
+    Every step below is a fresh subprocess, so a pull here takes effect on this
+    very run -- which is the point: a fix pushed from anywhere reaches the box
+    without anyone being at it. Failures are logged and ignored; missing an
+    update is survivable, missing a posting slot is not.
+    """
+    import self_update
+    changed, msg, files = self_update.pull()
+    log.write(f"--- update: {msg} ---\n")
+    if not changed:
+        return
+    stale = self_update.stale_units(files)
+    if stale:
+        # These keep running the code they booted with, so the pull hasn't
+        # actually reached them. Restarting them from here would kill the
+        # Discord bot mid-conversation, so say it instead of doing it.
+        log.write(f"--- update: restart for new code: {', '.join(stale)} ---\n")
+    if "run_all.py" in files and not os.environ.get("MEDIAMAKER_REEXEC"):
+        # The runner itself changed. Re-exec once (the sentinel makes a loop
+        # impossible) so this run uses the new sequence rather than replaying
+        # the old one for another hour.
+        log.write("--- update: re-exec into new run_all.py ---\n")
+        log.flush()
+        os.execve(sys.executable, [sys.executable, str(ROOT / "run_all.py")],
+                  {**os.environ, "MEDIAMAKER_REEXEC": "1"})
+
+
 def main():
     from datetime import datetime
     with open(LOG, "a", encoding="utf-8") as log:
         log.write(f"\n[{datetime.now()}] run_all start\n")
+        try:
+            _self_update(log)
+        except Exception as e:
+            log.write(f"--- update FAILED: {e} ---\n")
         try:
             _cleanup_old_renders(log)
         except Exception as e:
