@@ -61,6 +61,11 @@ quota on a retry storm is worse than a skipped run.
 - Single video: keep narration ≤ ~60s (~170 words). Longer material: write a
   300-450 word saga and let the splitter make a 2-3 part series — multi-part
   converts followers 3-5x better.
+- A story JSON may carry an optional `caption` field. If present, it is used
+  verbatim for the social caption instead of the AI-written one — but only when
+  the story is a single video. A series needs per-part framing and follow bait,
+  which one fixed caption can't carry, so multi-part falls back to `ai_caption`
+  and logs that it did.
 
 ## Switching off review mode
 
