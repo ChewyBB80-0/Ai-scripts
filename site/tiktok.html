@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TikTok integration — ParkourFlux</title>
+<meta name="description" content="What the ParkourFlux publishing tool does with the TikTok API: scopes requested, how they are used, what data is stored, and how to revoke access.">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/">Parkour<span>Flux</span></a>
+    <nav class="site">
+      <a href="/">Home</a>
+      <a href="/how-it-works">How it works</a>
+      <a href="/tiktok" aria-current="page">TikTok integration</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/terms">Terms</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <p class="eyebrow">Developer integration</p>
+  <h1>How ParkourFlux uses the TikTok API</h1>
+  <p class="lede">
+    The ParkourFlux publishing tool is a first-party, single-operator
+    application. It exists to upload videos that ParkourFlux produces to
+    ParkourFlux's own TikTok account. It is not offered to third parties, has
+    no other users, and does not read or collect anyone else's content.
+  </p>
+
+  <div class="note">
+    <p>
+      <strong>Single-account scope.</strong> The application is authorised by
+      one TikTok account — the account that owns this channel — and can act
+      only on that account. There is no sign-up, no user directory, and no
+      mechanism for another person to connect an account.
+    </p>
+  </div>
+
+  <h2>Permissions requested, and what each is for</h2>
+  <div class="scroll-x">
+    <table>
+      <thead>
+        <tr><th>Scope</th><th>Why it is needed</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>user.info.basic</code></td>
+          <td>
+            Confirms which account the tool is authorised against, so a video
+            cannot be uploaded to the wrong destination, and surfaces the
+            creator's available privacy settings before a post is prepared.
+          </td>
+        </tr>
+        <tr>
+          <td><code>video.upload</code></td>
+          <td>
+            Uploads a finished video into the account's own drafts/inbox. The
+            operator then opens TikTok and posts it manually. This is the
+            current mode of operation.
+          </td>
+        </tr>
+        <tr>
+          <td><code>video.publish</code></td>
+          <td>
+            Requested so an already-approved video can be posted directly on a
+            schedule instead of requiring a manual tap. The video is reviewed
+            and approved before the API is called — this removes a manual
+            step, not the review.
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>The publishing flow</h2>
+  <ol class="steps">
+    <li>
+      <strong>A video is produced</strong>
+      The pipeline renders a finished vertical video. Nothing has touched
+      TikTok yet.
+    </li>
+    <li>
+      <strong>The operator approves it</strong>
+      The finished file is reviewed and explicitly approved. Rejected videos
+      are never uploaded.
+    </li>
+    <li>
+      <strong>It is uploaded</strong>
+      The approved file is sent to the account's own TikTok drafts. Under
+      direct post, the same approved file is published straight to the
+      account.
+    </li>
+    <li>
+      <strong>The result is logged</strong>
+      Success or failure is written to a local log. Failures stop the run
+      rather than retrying.
+    </li>
+  </ol>
+
+  <h2>Privacy settings are respected</h2>
+  <p>
+    Before preparing a post, the tool queries the creator's available privacy
+    options and will not select a level the account is not permitted to use.
+    If the requested level is unavailable, it falls back to the most
+    restrictive option the account allows rather than publishing more widely
+    than intended.
+  </p>
+
+  <h2>What data is stored, and where</h2>
+  <ul>
+    <li>
+      <strong>An OAuth access and refresh token</strong> for the single
+      authorised account, stored locally on the operator's own machine in a
+      file that is excluded from version control. It is never transmitted
+      anywhere except to TikTok.
+    </li>
+    <li>
+      <strong>A local publishing log</strong> recording which of our own
+      videos were uploaded and when.
+    </li>
+  </ul>
+  <p>
+    No TikTok user data is collected, no analytics about other accounts are
+    gathered, no content belonging to anyone else is read or downloaded, and
+    nothing is shared with third parties. There is no server-side database —
+    the tool runs on a single machine.
+  </p>
+
+  <h2>Revoking access</h2>
+  <p>
+    Access can be withdrawn at any time from the TikTok account's
+    <em>Security &amp; permissions &rarr; Manage app permissions</em> screen.
+    Revocation takes effect immediately; the stored token stops working and
+    the tool can no longer upload.
+  </p>
+
+  <h2>Contact</h2>
+  <p>
+    Questions about this integration can be sent to
+    <a href="mailto:REPLACE-WITH-YOUR-CONTACT-EMAIL">REPLACE-WITH-YOUR-CONTACT-EMAIL</a>.
+    See also our <a href="/privacy">privacy policy</a> and
+    <a href="/terms">terms</a>.
+  </p>
+</main>
+
+<footer class="site">
+  <div class="wrap">
+    <div class="foot-links">
+      <a href="/">Home</a>
+      <a href="/how-it-works">How it works</a>
+      <a href="/tiktok">TikTok integration</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/terms">Terms</a>
+    </div>
+    <p>ParkourFlux &middot; independent short-form video. Contact:
+      <a href="mailto:REPLACE-WITH-YOUR-CONTACT-EMAIL">REPLACE-WITH-YOUR-CONTACT-EMAIL</a>
+    </p>
+  </div>
+</footer>
+
+</body>
+</html>

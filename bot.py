@@ -602,18 +602,36 @@ def run_once(background_dir: str | None = None, topic_hint: str = "",
             end_card_path=end_card,
             end_card_seconds=getattr(config, "END_CARD_SECONDS", 6.0),
         )
-        # AI-written caption using current trends (auto-refreshed weekly);
-        # falls back to the static template internally if anything fails.
+        # Caption. A hand-written `caption` on the story wins -- if someone
+        # took the trouble to write one, generating over it is just discarding
+        # their work. Otherwise it's AI-written from current trends
+        # (auto-refreshed weekly), falling back to the static template
+        # internally if anything fails.
+        #
+        # Single-part only, deliberately: a series caption has to carry its own
+        # part framing and the follow bait for parts 1..n-1, and one fixed
+        # string cannot do that for every part. Rather than silently stamp the
+        # same caption on all three parts, fall back and say so.
         from social_caption import ai_caption
         cap_hook = part.get("hook") or part["beats"][0]
-        Path(f"{acc.out_dir}/{title}_caption.txt").write_text(
+        written = (part.get("caption") or "").strip()
+        if written and part["total_parts"] == 1:
+            caption_text = written
+            print("Caption: using the story's hand-written caption.")
+        else:
+            if written:
+                print(f"Caption: story has a hand-written caption, but this is "
+                      f"part {part['part']}/{part['total_parts']} -- generating "
+                      f"a per-part caption instead.")
             # Pass the same subreddit the hook card prints, so the caption's
             # lead hashtag matches what the viewer sees on screen.
-            ai_caption(cap_hook, handle=acc.handle,
-                       part=part["part"], total_parts=part["total_parts"],
-                       genre=part.get("genre"),
-                       subreddit=part.get("subreddit")),
-            encoding="utf-8")
+            caption_text = ai_caption(cap_hook, handle=acc.handle,
+                                      part=part["part"],
+                                      total_parts=part["total_parts"],
+                                      genre=part.get("genre"),
+                                      subreddit=part.get("subreddit"))
+        Path(f"{acc.out_dir}/{title}_caption.txt").write_text(
+            caption_text, encoding="utf-8")
 
         out_paths.append(out_path)
         print(f"Assembled: {out_path}  (+ caption: output/{title}_caption.txt)")
