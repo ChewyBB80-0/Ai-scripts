@@ -280,6 +280,7 @@ def _post_video(path: str | Path, title: str, acc: Account | None = None,
     # Dedup: skip if this exact video already went to IG.
     if ("instagram" in platforms and config.POST_TO_INSTAGRAM and acc.ig_enabled
             and acc.ig_token and base not in _ig_posted()):
+        uploaded = False
         try:
             from video_host import upload_public, delete_hosted
             from instagram_upload import post_reel, post_story
@@ -287,6 +288,7 @@ def _post_video(path: str | Path, title: str, acc: Account | None = None,
             caption = capf.read_text(encoding="utf-8") if capf.exists() else \
                 f"{title}\n\n#reels #fyp #storytime #reddit"
             url = upload_public(path)
+            uploaded = True
             post_reel(url, caption=caption, ig_user=acc.ig_user_id, token=acc.ig_token)
             log_post(base, None, "posted_instagram")
             print(f"Cross-posted to Instagram: {base}")
@@ -305,11 +307,20 @@ def _post_video(path: str | Path, title: str, acc: Account | None = None,
                     except Exception as se:
                         log_error(f"Instagram Story failed for {base}: {se}")
                         print(f"Story post failed (Reel unaffected): {se}")
-            # IG has now pulled the file (Reel + Story) -> remove it from R2.
-            delete_hosted(path)
         except Exception as e:
             log_error(f"Instagram cross-post failed for {base}: {e}")
             print(f"Instagram cross-post failed (YouTube post unaffected): {e}")
+        finally:
+            # R2 is a temp relay, so the file has to come back out whether or
+            # not the post worked. This used to be the last line of the try,
+            # which meant any failure after the upload -- expired token, Graph
+            # API hiccup, rate limit -- left the render in the bucket forever
+            # with nothing ever revisiting it. `uploaded` gates on the upload
+            # having actually happened, which also guarantees delete_hosted is
+            # bound (it is imported on the line before). Running here still
+            # puts the delete after the Story, which re-pulls the same URL.
+            if uploaded:
+                delete_hosted(path)
 
     # Queue for TikTok behind the approval gate -- the Discord bot DMs a
     # preview and only publishes once the owner taps Approve. Never blocks or
