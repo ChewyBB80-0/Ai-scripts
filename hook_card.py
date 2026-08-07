@@ -173,15 +173,18 @@ def build_hook_card(hook_text: str, out_path: str | Path,
         d.text((ax + AVATAR_SIZE / 2 - iw / 2, ay + AVATAR_SIZE / 2 - 30), initial,
                font=ifont, fill=(255, 255, 255))
 
-    # --- handle + verified badge ---
+    # --- handle (+ verified badge, if fabricated social proof is enabled) ---
+    import config
+    _proof = getattr(config, "SHOW_FAKE_SOCIAL_PROOF", False)
     hx = ax + AVATAR_SIZE + 26
     hy = ay + AVATAR_SIZE / 2 - 26
     d.text((hx, hy), handle, font=handle_font, fill=HANDLE_COLOR)
-    bx = hx + d.textlength(handle, font=handle_font) + 16
-    bcy, br = hy + 26, 19
-    d.ellipse([bx, bcy - br, bx + 2 * br, bcy + br], fill=VERIFIED_BLUE)
-    d.line([(bx + 10, bcy + 1), (bx + 17, bcy + 8), (bx + 29, bcy - 8)],
-           fill=(255, 255, 255), width=5)
+    if _proof:
+        bx = hx + d.textlength(handle, font=handle_font) + 16
+        bcy, br = hy + 26, 19
+        d.ellipse([bx, bcy - br, bx + 2 * br, bcy + br], fill=VERIFIED_BLUE)
+        d.line([(bx + 10, bcy + 1), (bx + 17, bcy + 8), (bx + 29, bcy - 8)],
+               fill=(255, 255, 255), width=5)
 
     # --- part badge (multi-part series), top-right on the avatar row ---
     if part_label:
@@ -217,12 +220,15 @@ def build_hook_card(hook_text: str, out_path: str | Path,
     d.ellipse([ex + 16, ey + 8, ex + 36, ey + 28], outline=GRAY, width=4)
     d.polygon([(ex + 3, ey + 24), (ex + 18, ey + 42), (ex + 33, ey + 24)], fill=(255, 255, 255))
     d.line([(ex + 4, ey + 23), (ex + 18, ey + 40), (ex + 32, ey + 23)], fill=GRAY, width=4)
-    d.text((ex + 48, ey), "99+", font=eng_font, fill=GRAY)
-    # comment bubble
-    cx = ex + 170
+    if _proof:
+        d.text((ex + 48, ey), "99+", font=eng_font, fill=GRAY)
+    # comment bubble. Without the counts the icons sit closer together --
+    # spacing that was sized around "99+" leaves an obvious hole otherwise.
+    cx = ex + (170 if _proof else 96)
     d.rounded_rectangle([cx, ey + 2, cx + 40, ey + 34], radius=12, outline=GRAY, width=4)
     d.polygon([(cx + 8, ey + 32), (cx + 8, ey + 44), (cx + 20, ey + 32)], fill=GRAY)
-    d.text((cx + 54, ey), "99+", font=eng_font, fill=GRAY)
+    if _proof:
+        d.text((cx + 54, ey), "99+", font=eng_font, fill=GRAY)
     # share (right-aligned)
     share_w = d.textlength("Share", font=eng_font)
     sx = ox + CARD_WIDTH - PAD - share_w

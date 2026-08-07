@@ -70,6 +70,14 @@ END_CARD_SECONDS = 6.0
 # from Reddit. Set back to True to restore the r/ badge on hook cards.
 SHOW_SUBREDDIT_BADGE = False
 
+# The hook card used to draw a blue verified checkmark and "99+" like/comment
+# counts. Both are fabricated: the channel is not verified anywhere, and no
+# such engagement exists. That is the same problem as the r/ badge, one step
+# further -- a subreddit label implied a source, a verification tick imitates a
+# platform's own trust affordance and invents social proof to go with it.
+# The icons stay (they read as a UI, and "Share" is a real ask); the claims go.
+SHOW_FAKE_SOCIAL_PROOF = False
+
 # Stated in every video description. Costs nothing, and it is the defence.
 ORIGINALITY_NOTE = (
     "Original short fiction, written for this channel and narrated with a "
