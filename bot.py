@@ -557,7 +557,12 @@ def run_once(background_dir: str | None = None, topic_hint: str = "",
                             _p = _base_title(_row[1]).replace("_", " ").strip()
                             if _p and _p not in recent_premises:
                                 recent_premises.append(_p)
-            recent_premises = recent_premises[-25:]
+            # 60, not 25: story_bank shows the model only the last 25 but counts
+            # recurring words and pairings across everything it is given, and
+            # this channel repeats itself slowly. The three near-identical
+            # landlord premises never fell inside one 25-item window, so nothing
+            # ever noticed they were the same story.
+            recent_premises = recent_premises[-60:]
             # Avoid an already-posted title: retry a few times, then stop.
             for attempt in range(3):
                 candidate = generate_story_via_claude(topic_hint=topic_hint,

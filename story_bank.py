@@ -238,6 +238,9 @@ def generate_story_via_claude(topic_hint: str = "", api_key: str | None = None,
             "best friend, stranger, teacher, HOA, customer, delivery driver, etc.) and the "
             "type of conflict, so consecutive stories never feel like the same template.\n"
             "Recently posted -- AVOID repeating any of these: " + "; ".join(avoid[-25:]) + "\n")
+        # Note the asymmetry: the model is SHOWN the last 25 premises to keep
+        # the prompt readable, but the repetition counting below runs over the
+        # whole list it was handed.
         # Avoiding exact premises isn't enough: the model dodges a repeated
         # premise but keeps reaching for the same relationships, so the channel
         # drifts into one motif. On 2026-07-23, 8 of 19 live videos featured a
@@ -267,17 +270,53 @@ def generate_story_via_claude(topic_hint: str = "", api_key: str | None = None,
                 "landlord": {"landlord", "landlords", "tenant", "lease",
                              "rent", "deposit", "apartment"},
             }.get(_t, set()))
+        # Brand and genre vocabulary recurs BY DESIGN and must never be banned.
+        # Dropping the word threshold to 2 put "parkour" straight onto the ban
+        # list, which would fight PARKOUR_META_SHARE the same way banning
+        # "landlord" fought THEME_WEIGHTS. "aita" is a genre marker, not a
+        # motif. Note these protect the single words only -- a PAIRING like
+        # "parkour course" can still be flagged as an overused situation.
+        _protected |= {"minecraft", "aita", "aitah", "reddit", "video", "channel"}
+        if getattr(_cfg, "PARKOUR_META_SHARE", 0):
+            _protected |= {"parkour", "speedrun", "speedrunning"}
+        # Count over EVERYTHING the caller sent, not just the 25 shown above.
+        # Repetition on this channel is slow: the three "landlord charged me
+        # for unauthorised X" stories were spread wide enough that they never
+        # shared a 25-item window, so nothing ever counted them together.
+        _words = [_re.findall(r"[a-z]+", p.lower()) for p in avoid]
         _counts = collections.Counter(
-            w for p in avoid[-25:]
-            for w in _re.findall(r"[a-z]+", p.lower())
+            w for ws in _words for w in ws
             if len(w) > 3 and w not in _stop and w not in _protected)
-        _over = [w for w, n in _counts.most_common(8) if n >= 3]
-        if _over:
-            _avoid_txt += (
-                "OVERUSED ON THIS CHANNEL -- these keep recurring and are BANNED for "
-                "this story. Do not use them as the relationship, setting, or object "
-                "of the conflict, in any form: " + ", ".join(_over) + ". Pick a "
-                "relationship and situation that appears NOWHERE in the list above.\n")
+        # Two, not three. Three means the ban can only fire on the FOURTH
+        # telling, and a viewer scrolling the grid notices at the second.
+        _over = [w for w, n in _counts.most_common(8) if n >= 2]
+
+        # Pairs are counted WITHOUT the protection filter, deliberately.
+        # _protected keeps THEME_WEIGHTS working -- "landlord" recurring is the
+        # point of weighting landlords. But "landlord charged" recurring is not
+        # a theme, it is the same story told again, and word-level protection
+        # hid exactly that: three landlord-charged-me-for-unauthorised-something
+        # stories, all legal under the old rule.
+        _pairs = collections.Counter(
+            f"{a} {b}" for ws in _words
+            for a, b in zip(ws, ws[1:])
+            if len(a) > 3 and len(b) > 3 and a not in _stop and b not in _stop)
+        _over_pairs = [p for p, n in _pairs.most_common(6) if n >= 2]
+
+        if _over or _over_pairs:
+            _avoid_txt += "OVERUSED ON THIS CHANNEL -- BANNED for this story.\n"
+            if _over:
+                _avoid_txt += (
+                    "  Words: " + ", ".join(_over) + ". Do not use these as the "
+                    "relationship, setting, or object of the conflict, in any form.\n")
+            if _over_pairs:
+                _avoid_txt += (
+                    "  Situations: " + ", ".join(_over_pairs) + ". These exact "
+                    "pairings keep recurring. Even where the individual words are "
+                    "fine to reuse, this COMBINATION is not -- it is the same "
+                    "story with the numbers changed.\n")
+            _avoid_txt += ("  Pick a relationship and situation that appears "
+                           "NOWHERE in the list above.\n")
         # Word-level bans only fire once a term has appeared 3+ times, so they
         # can't stop a near-duplicate on its SECOND occurrence -- which is how
         # "gym teacher confiscated my parkour shoes" and "PE teacher failed my
