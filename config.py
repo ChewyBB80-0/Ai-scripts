@@ -58,6 +58,27 @@ END_CARD = True
 END_CARD_LINE = "FOLLOW FOR A NEW STORY EVERY DAY"
 END_CARD_SECONDS = 6.0
 
+# CTA variants for the closing card. ~900 views and 0 subscribers means either
+# nobody reaches the ask or the ask doesn't work, and one fixed line can never
+# tell us which -- there's nothing to compare it against.
+#
+# Each video is assigned a variant deterministically from its title (see
+# video_attrs.pick_cta_variant) and the choice is recorded, so once retention
+# and subscriber data are available the variants can be compared instead of
+# guessed at. Set to [] to go back to a single fixed END_CARD_LINE.
+#
+# They differ by the REASON to follow, not by wording: a standing promise, a
+# similarity claim, a fear of missing the next one, a concrete next drop. If
+# they only differed in phrasing the comparison would measure nothing.
+CTA_VARIANTS = [
+    ("daily",    "FOLLOW FOR A NEW STORY EVERY DAY"),
+    ("more",     "FOLLOW FOR MORE STORIES LIKE THIS"),
+    ("miss",     "FOLLOW SO YOU DON'T MISS THE NEXT ONE"),
+    # Two short clauses rather than one dash-joined line: the card wraps to two
+    # lines and an em dash left dangling at the break reads as a typo.
+    ("tomorrow", "NEXT STORY TOMORROW. FOLLOW NOW"),
+]
+
 # Autonomous cadence: how many NEW stories to start per day (Pacific time,
 # matching YouTube's quota reset). A multi-part saga counts as ONE story here
 # even though it uploads several videos -- so this is "stories/day", while

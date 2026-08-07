@@ -434,6 +434,12 @@ def run_once(background_dir: str | None = None, topic_hint: str = "",
     # otherwise fall back to the local story bank so the bot still runs.
     # Never post the same story twice.
     already = posted_titles()
+    # Provenance for video_attrs: which of these paths produced the story, and
+    # whether the topic hint was auto-discovered or handed in. Recorded per
+    # video so hinted and unhinted cohorts can be compared later -- right now
+    # trend_discovery is used purely on faith, with nothing measuring it.
+    story_source = "bank"
+    hint_source = "caller" if topic_hint else ""
     if os.environ.get("ANTHROPIC_API_KEY"):
         story = None
         # Priority: source from a REAL top Reddit post (hybrid -- proven-viral
@@ -449,6 +455,7 @@ def run_once(background_dir: str | None = None, topic_hint: str = "",
                     if candidate["title"] not in already:
                         mark_used(post["id"])
                         story = candidate
+                        story_source = "reddit"
                         print(f"Sourced from r/{post['subreddit']} "
                               f"(score {post['score']}): {story['title']}")
             except Exception as e:
@@ -462,6 +469,7 @@ def run_once(background_dir: str | None = None, topic_hint: str = "",
                     from trend_discovery import suggest_topic_hint
                     topic_hint = suggest_topic_hint(youtube_api_key=os.environ.get("YOUTUBE_API_KEY"))
                     if topic_hint:
+                        hint_source = "trend_discovery"
                         print(f"Using trending topic hint: {topic_hint}")
                 except Exception as e:
                     log_error(f"Trend discovery failed (continuing without a hint): {e}")
@@ -482,6 +490,7 @@ def run_once(background_dir: str | None = None, topic_hint: str = "",
                                                       genres=acc.genres, avoid=recent_premises)
                 if candidate["title"] not in already:
                     story = candidate
+                    story_source = "ai"
                     break
                 log_error(f"Generated duplicate title ({candidate['title']}), retry {attempt + 1}/3")
         if story is None:
@@ -585,13 +594,20 @@ def run_once(background_dir: str | None = None, topic_hint: str = "",
         # Closing CTA card -- only on the LAST part, so a saga doesn't ask for
         # the follow before the story is finished.
         end_card = None
+        cta_variant = ""
         if (getattr(config, "END_CARD", True)
                 and part["part"] == part["total_parts"]):
             from hook_card import build_end_card
+            from video_attrs import pick_cta_variant
+            # Which follow-ask this video gets. Deterministic on the title, so
+            # a re-render keeps the same variant and the comparison stays honest.
+            cta_variant, cta_line = pick_cta_variant(
+                title, getattr(config, "CTA_VARIANTS", []))
+            if not cta_line:
+                cta_line = getattr(config, "END_CARD_LINE", config.END_CTA_LINE)
             end_card = build_end_card(f"{acc.out_dir}/{title}_endcard.png",
                                       handle=acc.handle, avatar_path=acc.logo,
-                                      line=getattr(config, "END_CARD_LINE",
-                                                   config.END_CTA_LINE).rstrip("."))
+                                      line=cta_line.rstrip("."))
 
         assemble_video_dynamic(
             footage_files, voice_out, caption_path, out_path,
@@ -634,6 +650,29 @@ def run_once(background_dir: str | None = None, topic_hint: str = "",
             caption_text, encoding="utf-8")
 
         out_paths.append(out_path)
+
+        # Record what we CHOSE for this video, while we still know it. Retention
+        # can be fetched for any video later; which CTA variant or background set
+        # it used cannot be reconstructed after the fact.
+        import video_attrs
+        _last = words[-1] if words else None
+        _end_ms = (getattr(_last, "end_ms", None)
+                   or (_last.get("end_ms") if isinstance(_last, dict) else None) or 0)
+        video_attrs.record(
+            title,
+            account=acc.id,
+            genre=part.get("genre") or story.get("genre"),
+            hook=part.get("hook") or part["beats"][0],
+            part=part["part"],
+            total_parts=part["total_parts"],
+            multipart=part["total_parts"] > 1,
+            narration_seconds=round(_end_ms / 1000, 1),
+            background_set=(footage_files[0].parent.name if footage_files else None),
+            cta_variant=cta_variant or None,
+            source=story_source,
+            trend_hint=topic_hint or None,
+            hint_source=hint_source or None,
+        )
         print(f"Assembled: {out_path}  (+ caption: output/{title}_caption.txt)")
 
     # 5. Hold for review, or post
