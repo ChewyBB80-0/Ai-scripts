@@ -160,17 +160,33 @@ def post_direct(video_path: str | Path, title: str = "",
                 privacy: str = "PUBLIC_TO_EVERYONE") -> str:
     """AUTOPOST: publish straight to the account with no manual tap in the app.
 
-    NOT USABLE YET. TikTok forces every post from an UNAUDITED client to
-    SELF_ONLY (private) regardless of what we pass here, so until the app
-    passes TikTok's Content Posting audit this publishes to an audience of
-    exactly one. Requirements to switch it on, in order:
+    PARKED ON PURPOSE -- do not wire this into the pipeline.
+
+    The app was rejected once already, so the resubmission deliberately asks
+    for the narrowest set of permissions the tool actually uses:
+    user.info.basic + video.upload, drafts only. Requesting a permission we do
+    not exercise is a common rejection reason on its own, and video.publish
+    additionally triggers TikTok's stricter Direct Post audit -- a higher bar
+    to clear on a second attempt. /tiktok on the public site states plainly
+    that video.publish is NOT requested, so calling this would contradict our
+    own submission.
+
+    To switch it on later, in order:
       1. Swap TIKTOK_CLIENT_KEY/SECRET to the PRODUCTION app's keys.
-      2. Add the `video.publish` scope in the TikTok developer portal, then
-         re-run `python tiktok_upload.py auth` (the saved token only carries
-         the scopes it was granted -- video.upload alone is not enough).
-      3. Submit the app for audit and get approved.
+      2. Add `video.publish` to SCOPES above and in the developer portal, then
+         re-run `python tiktok_upload.py auth` (a saved token only carries the
+         scopes it was granted -- video.upload alone is not enough).
+      3. Pass the Direct Post audit, and update the claims on /tiktok to match.
     Then this becomes a drop-in replacement for post_to_drafts().
     """
+    # Checked first, before touching the filesystem or the network: the scope
+    # is the real blocker, and reporting it as a missing file or a generic
+    # TikTok scope error just sends whoever hits it down the wrong path.
+    if "video.publish" not in SCOPES:
+        raise RuntimeError(
+            "post_direct() needs the video.publish scope, which this app "
+            "deliberately does not request -- see the docstring. Use "
+            "post_to_drafts() and post from the TikTok app.")
     video_path = Path(video_path)
     size = video_path.stat().st_size
     at = _access_token()

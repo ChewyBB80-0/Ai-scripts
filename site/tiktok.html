@@ -51,9 +51,9 @@
         <tr>
           <td><code>user.info.basic</code></td>
           <td>
-            Confirms which account the tool is authorised against, so a video
-            cannot be uploaded to the wrong destination, and surfaces the
-            creator's available privacy settings before a post is prepared.
+            Confirms which account the token belongs to, so a video cannot be
+            uploaded to the wrong destination. Used to display the authorised
+            account when checking the integration; no profile data is stored.
           </td>
         </tr>
         <tr>
@@ -64,18 +64,15 @@
             current mode of operation.
           </td>
         </tr>
-        <tr>
-          <td><code>video.publish</code></td>
-          <td>
-            Requested so an already-approved video can be posted directly on a
-            schedule instead of requiring a manual tap. The video is reviewed
-            and approved before the API is called — this removes a manual
-            step, not the review.
-          </td>
-        </tr>
       </tbody>
     </table>
   </div>
+
+  <p>
+    These two are the only permissions the application requests. It does not
+    ask for <code>video.publish</code>: nothing is posted to the account
+    directly, so the permission to do so is not needed.
+  </p>
 
   <h2>The publishing flow</h2>
   <ol class="steps">
@@ -90,10 +87,9 @@
       are never uploaded.
     </li>
     <li>
-      <strong>It is uploaded</strong>
-      The approved file is sent to the account's own TikTok drafts. Under
-      direct post, the same approved file is published straight to the
-      account.
+      <strong>It is uploaded to drafts</strong>
+      The approved file is sent to the account's own TikTok drafts. It is not
+      published. The operator opens TikTok and posts it themselves.
     </li>
     <li>
       <strong>The result is logged</strong>
@@ -102,13 +98,12 @@
     </li>
   </ol>
 
-  <h2>Privacy settings are respected</h2>
+  <h2>Who chooses the privacy setting</h2>
   <p>
-    Before preparing a post, the tool queries the creator's available privacy
-    options and will not select a level the account is not permitted to use.
-    If the requested level is unavailable, it falls back to the most
-    restrictive option the account allows rather than publishing more widely
-    than intended.
+    The creator does. A video sent to drafts is not published by this
+    application, so it carries no audience setting of its own — privacy,
+    caption and everything else are chosen in the TikTok app at the moment the
+    creator decides to post it.
   </p>
 
   <h2>What data is stored, and where</h2>
