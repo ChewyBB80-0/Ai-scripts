@@ -28,8 +28,13 @@ AUTH_URL = "https://www.tiktok.com/v2/auth/authorize/"
 TOKEN_URL = "https://open.tiktokapis.com/v2/oauth/token/"
 INBOX_INIT = "https://open.tiktokapis.com/v2/post/publish/inbox/video/init/"
 STATUS_URL = "https://open.tiktokapis.com/v2/post/publish/status/fetch/"
+# The user.info.basic endpoint. This is the one that scope is actually for.
+USER_INFO = "https://open.tiktokapis.com/v2/user/info/"
 # Direct Post (autopost, no manual tap) -- needs the video.publish scope and an
 # AUDITED production app. See post_direct() for why it's not live yet.
+# NOTE creator_info is a Direct Post endpoint, NOT a user.info.basic one: it
+# returns scope_not_authorized on our upload-only scope set. Use whoami() to
+# read the authorised account.
 CREATOR_INFO = "https://open.tiktokapis.com/v2/post/publish/creator_info/query/"
 DIRECT_INIT = "https://open.tiktokapis.com/v2/post/publish/video/init/"
 
@@ -108,12 +113,37 @@ def _access_token() -> str:
     return tok["access_token"]
 
 
+def whoami() -> dict:
+    """Which account is this token for? This is what user.info.basic buys.
+
+    Added because the app review submission states that user.info.basic
+    "confirms which account the token belongs to, so a video cannot reach the
+    wrong account" -- and nothing in this file actually called the user-info
+    endpoint, so that was a claim about behaviour that did not exist. It does
+    now. creator_info() is not a substitute: it belongs to Direct Post and
+    returns scope_not_authorized without video.publish.
+    """
+    r = requests.get(USER_INFO,
+                     headers={"Authorization": f"Bearer {_access_token()}"},
+                     params={"fields": "open_id,display_name"}, timeout=30)
+    return r.json()
+
+
 def post_to_drafts(video_path: str | Path) -> str:
     """Upload one video to the TikTok inbox/drafts. Returns the publish_id.
     Uses FILE_UPLOAD (direct byte upload) so it needs no URL-domain verification."""
     video_path = Path(video_path)
     size = video_path.stat().st_size
     at = _access_token()
+    # Name the destination before uploading, so "cannot reach the wrong
+    # account" is something the operator can actually see. Non-fatal: an
+    # informational lookup must never be what stops a video going out.
+    try:
+        _who = (whoami().get("data") or {}).get("user") or {}
+        if _who.get("display_name"):
+            print(f"Uploading to TikTok account: {_who['display_name']}")
+    except Exception as _e:
+        print(f"(could not confirm the destination account: {_e})")
     # 1. init a single-chunk file upload (our 720p videos are only ~7-8 MB)
     r = requests.post(INBOX_INIT, headers={
         "Authorization": f"Bearer {at}",
@@ -257,12 +287,15 @@ if __name__ == "__main__":
             post_to_drafts(mp4s[-1])
     elif cmd == "direct" and len(sys.argv) > 2:
         post_direct(sys.argv[2])
+    elif cmd == "whoami":
+        print(json.dumps(whoami(), indent=2))
     elif cmd == "creator-info":
         print(json.dumps(creator_info(), indent=2))
     elif cmd == "status" and len(sys.argv) > 2:
         print(json.dumps(check_status(sys.argv[2]), indent=2))
     else:
         print("usage:\n  python tiktok_upload.py auth"
+              "\n  python tiktok_upload.py whoami   (which account -- user.info.basic)"
               "\n  python tiktok_upload.py post <video.mp4>"
               "\n  python tiktok_upload.py post-latest"
               "\n  python tiktok_upload.py status <publish_id>"
