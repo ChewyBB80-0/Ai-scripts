@@ -17,17 +17,18 @@ stylesheet. Every page works standalone.
 | `callback.html` | `/callback` | OAuth redirect target — displays the code to paste back |
 | `style.css` | `/style.css` | Shared styles, light + dark |
 
-## Before deploying — three things to replace
+## Placeholders — filled in
 
-Search the whole directory for these and fill them in. `grep -rn "REPLACE-WITH" site/`
+All three are done; kept here so it's obvious what to change if any of them move.
 
-1. **`REPLACE-WITH-YOUR-CONTACT-EMAIL`** — appears in every footer and on the
-   TikTok, privacy and terms pages. App review generally expects a working
-   contact address.
-2. **`REPLACE-WITH-DATE`** — the "Last updated" line on `/privacy` and `/terms`.
-3. **Check the Instagram URL** on `index.html` — I guessed
-   `instagram.com/parkourflux` from the handle in `accounts.json`. Fix it if
-   the real profile differs.
+1. **Contact email** — `mindcraftkrish.patel@gmail.com`, in every footer and on
+   the TikTok, privacy and terms pages. App review expects a working address.
+2. **"Last updated"** — `August 6, 2026` on `/privacy` and `/terms`. Bump this
+   whenever the policy text actually changes, not on every deploy.
+3. **Instagram URL** — `instagram.com/parkourflux`, confirmed against the
+   Graph API (`username: parkourflux`), not just the handle in `accounts.json`.
+
+`grep -rn "REPLACE-WITH" site/` should return nothing.
 
 ## If you already have a privacy policy that TikTok accepted
 
