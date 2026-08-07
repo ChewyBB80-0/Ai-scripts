@@ -2,11 +2,13 @@
 Description=Refresh dashboard stats every 15 minutes
 
 [Timer]
-OnBootSec=2min
-OnUnitActiveSec=15min
-# ~96 runs/day. A stats pass costs only a few YouTube API units (an upload
-# costs 1600), so this is a rounding error against the 10k daily quota.
+# Calendar-based, NOT OnUnitActiveSec. A relative timer computes its next run
+# from the last service activation, so if that chain breaks the timer strands
+# with "Trigger: n/a" and never fires again -- which is exactly what happened
+# between 2026-07-30 and 2026-08-06. A calendar spec always has a next run.
+OnCalendar=*:0/15
 Persistent=true
+AccuracySec=30s
 
 [Install]
 WantedBy=timers.target
