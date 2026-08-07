@@ -74,18 +74,30 @@ echo "Verifying the live routes ..."
 sleep 5
 fail=0
 for p in / /how-it-works /tiktok /privacy /terms /callback /style.css; do
-    code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
-           "https://${PROJECT}.pages.dev${p}?v=$$" || echo 000)
+    # -L: Pages 308s to the canonical path while a deploy propagates, which is
+    # correct behaviour, not a broken route. Judge the destination.
+    # 2>/dev/null: the snap build of curl prints a multi-line sandbox warning to
+    # stderr on every single call, which buried the actual results.
+    code=$(curl -sL -o /dev/null -w '%{http_code}' --max-time 20 \
+           "https://${PROJECT}.pages.dev${p}?v=$$" 2>/dev/null || echo 000)
     printf '  %-14s %s\n' "$p" "$code"
     [ "$code" = "200" ] || fail=1
 done
 
 # /callback is the one that breaks TikTok auth rather than just looking wrong.
-if curl -s --max-time 20 "https://${PROJECT}.pages.dev/callback?code=DEPLOYCHECK" \
-   | grep -q "DEPLOYCHECK"; then
-    echo "  callback extracts ?code=  OK"
+#
+# Check for the CODE THAT READS the parameter, not for the parameter appearing
+# in the response. callback.html injects it client-side via URLSearchParams, so
+# curl -- which runs no JavaScript -- can never see the value. The first
+# version of this grepped for the echoed code and therefore failed on every
+# deploy including a perfectly good one. A check that always fails gets
+# ignored, and then it is worse than no check.
+if curl -sL --max-time 20 "https://${PROJECT}.pages.dev/callback" 2>/dev/null \
+   | grep -q "URLSearchParams"; then
+    echo "  callback serves its code-reading script  OK"
 else
-    echo "  callback did NOT echo the code -- check before re-authing TikTok" >&2
+    echo "  callback is missing its URLSearchParams handler -- TikTok auth" >&2
+    echo "  would return a code the page cannot display. Check before re-auth." >&2
     fail=1
 fi
 
