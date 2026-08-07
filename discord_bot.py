@@ -165,4 +165,10 @@ async def on_message(msg: discord.Message):
         await msg.channel.send(reply[i:i + 1900])
 
 
+# Two bots on one token both receive every gateway event, so every command
+# that posts a video runs twice -- silently, because each bot is behaving
+# correctly on its own. This is the guard against that.
+import single_instance
+single_instance.require("discord_bot")
+
 client.run(os.environ["DISCORD_BOT_TOKEN"])

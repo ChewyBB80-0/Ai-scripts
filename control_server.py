@@ -698,4 +698,10 @@ def chat():
 
 
 if __name__ == "__main__":
+    # A second control server can trigger posts through the same tokens as the
+    # first. Port 8000 only stops the second one serving HTTP -- it does not
+    # stop it existing, and two were found running here alongside the playbox's.
+    import single_instance
+    single_instance.require("control_server")
+
     app.run(host="127.0.0.1", port=8000, debug=False)

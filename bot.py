@@ -228,6 +228,32 @@ def _norm_platforms(p) -> set[str]:
     return out or {"youtube", "instagram"}
 
 
+def _assert_may_post():
+    """Refuse to publish from a machine that isn't the designated poster.
+
+    A same-machine lock cannot help here: the Windows box and the playbox hold
+    copies of the SAME YouTube and Instagram tokens, and each keeps its own
+    output/post_log.csv (output/ is gitignored). So neither one's dedup can see
+    what the other published -- two hosts will happily post the same story, and
+    the logs will each look perfectly consistent afterwards.
+
+    config.POSTING_HOST names the one host allowed to publish. Empty disables
+    the check. MEDIAMAKER_ALLOW_POST=1 overrides it for a deliberate one-off
+    from another machine, which is a thing we actually do.
+    """
+    import socket
+    want = (getattr(config, "POSTING_HOST", "") or "").strip()
+    if not want or os.environ.get("MEDIAMAKER_ALLOW_POST") == "1":
+        return
+    here = socket.gethostname()
+    if here.lower().split(".")[0] != want.lower().split(".")[0]:
+        raise RuntimeError(
+            f"Refusing to post from {here!r}: config.POSTING_HOST is {want!r}.\n"
+            f"{want} shares these tokens, so posting from here double-posts and "
+            f"neither machine's post_log would show it.\n"
+            f"Deliberate one-off? Set MEDIAMAKER_ALLOW_POST=1 for this run.")
+
+
 def _post_video(path: str | Path, title: str, acc: Account | None = None,
                 platforms=None, publish_at: str | None = None):
     """Post one rendered video. platforms: subset of {'youtube','instagram'}
@@ -237,6 +263,7 @@ def _post_video(path: str | Path, title: str, acc: Account | None = None,
     acc = acc or Account()
     base = Path(path).stem
     platforms = _norm_platforms(platforms)
+    _assert_may_post()
 
     if "youtube" in platforms:
         from youtube_upload import upload_video

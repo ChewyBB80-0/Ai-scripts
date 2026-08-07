@@ -58,6 +58,16 @@ END_CARD = True
 END_CARD_LINE = "FOLLOW FOR A NEW STORY EVERY DAY"
 END_CARD_SECONDS = 6.0
 
+# The ONE machine allowed to publish. Both the playbox and the Windows box
+# hold copies of the same YouTube/Instagram tokens, and each keeps its own
+# output/post_log.csv -- so if both post, neither one's dedup can see the
+# other's uploads and the same story goes out twice with both logs looking
+# clean. The playbox is the 24/7 host, so it is the poster.
+#
+# Set to "" to allow any host. For a deliberate one-off from elsewhere, set
+# MEDIAMAKER_ALLOW_POST=1 for that run rather than editing this.
+POSTING_HOST = "krishplaybox"
+
 # --- Authenticity posture (issue #6) -------------------------------------
 # YouTube's 2026 "inauthentic content" rules target, among other things,
 # "readings of material you did not create". Our stories are ORIGINAL -- we
