@@ -174,20 +174,49 @@ def _fit(draw, text: str, max_w: int, max_h: int, start: int = 150):
 
 
 def build(text: str, theme: str | None = None, out: Path | None = None,
-          subtitle: str = "") -> Path:
-    from PIL import Image, ImageDraw, ImageFilter
+          subtitle: str = "", background: str | Path | None = None) -> Path:
+    """Compose a 16:9 thumbnail.
+
+    background: optional image to sit behind the text. The flat wash below
+    reads as a template at a glance, which is the look the compilations are
+    trying to get away from. A photographic background fixes that, but only
+    if the title stays readable over it -- hence the darkening scrim rather
+    than dropping the art in raw.
+    """
+    from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
     from hook_card import _font
 
     accent = THEME_COLORS.get(theme, THEME_COLORS[None])
-    img = Image.new("RGB", (W, H), (11, 13, 20))
-    d = ImageDraw.Draw(img)
+    img = None
+    if background and Path(background).exists():
+        try:
+            bg = Image.open(background).convert("RGB")
+            # cover-fit: fill the frame, crop the overflow, never letterbox
+            scale = max(W / bg.width, H / bg.height)
+            bg = bg.resize((round(bg.width * scale), round(bg.height * scale)),
+                           Image.LANCZOS)
+            img = bg.crop(((bg.width - W) // 2, (bg.height - H) // 2,
+                           (bg.width - W) // 2 + W, (bg.height - H) // 2 + H))
+            # Knock the art back so white text wins, but only just. Checked by
+            # downsampling to 320px -- roughly a phone impression, which is
+            # where almost all of them happen. A harder grade (0.55 + 0.28)
+            # kept the text perfectly legible and flattened the image to a
+            # black rectangle at that size, losing the thing worth looking at.
+            img = ImageEnhance.Brightness(img).enhance(0.72)
+            scrim = Image.new("RGB", (W, H), (0, 0, 0))
+            img = Image.blend(img, scrim, 0.16)
+        except Exception as e:
+            print(f"(thumbnail background unusable, falling back: {e})")
+            img = None
 
-    # subtle vignette-ish wash so flat text doesn't look pasted on
-    wash = Image.new("RGB", (W, H), (0, 0, 0))
-    wd = ImageDraw.Draw(wash)
-    wd.ellipse([-260, -420, W + 260, H], fill=(accent[0] // 5, accent[1] // 5,
-                                               accent[2] // 5))
-    img = Image.blend(img, wash.filter(ImageFilter.GaussianBlur(90)), 0.85)
+    if img is None:
+        img = Image.new("RGB", (W, H), (11, 13, 20))
+        # subtle vignette-ish wash so flat text doesn't look pasted on
+        wash = Image.new("RGB", (W, H), (0, 0, 0))
+        wd = ImageDraw.Draw(wash)
+        wd.ellipse([-260, -420, W + 260, H], fill=(accent[0] // 5, accent[1] // 5,
+                                                   accent[2] // 5))
+        img = Image.blend(img, wash.filter(ImageFilter.GaussianBlur(90)), 0.85)
     d = ImageDraw.Draw(img)
 
     # accent bar -- a fixed, recognisable channel element

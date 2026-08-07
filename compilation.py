@@ -389,21 +389,28 @@ def upload(path: Path, picked: list[dict] | None = None,
     acc = load_accounts()[0]
     from datetime import date
     n = len(picked) if picked else 0
-    # Title as an EVENT, not an inventory. The big channels in this niche name
-    # the theme ("...Who Went Too Far") and append "(Reddit Compilation)";
-    # a count like "14 Reddit Stories" reads as a listing and converts worse.
+    # Title as an EVENT, not an inventory: name the theme ("...Who Went Too
+    # Far"), because a count like "14 Stories" reads as a listing and converts
+    # worse. "(Story Compilation)" keeps the format signal people search for.
+    #
+    # It used to say "(Reddit Compilation)", and the description "Reddit-style
+    # stories". Same problem as the r/ badge on the Shorts cards -- these are
+    # our own fiction, and claiming a Reddit origin is the thing YouTube's
+    # inauthentic-content rules look for. It matters more here than on a Short:
+    # long-form is what carries watch hours toward monetization review.
     if theme and theme in THEMES:
-        title = f"{THEMES[theme][1]} (Reddit Compilation)"
+        title = f"{THEMES[theme][1]} (Story Compilation)"
     else:
-        title = f"Reddit Stories To Fall Asleep To (Reddit Compilation)"
-    desc = (f"{n} Reddit-style stories back to back. "
+        title = "Stories To Fall Asleep To (Story Compilation)"
+    desc = (f"{n} original short stories back to back. "
             "Jump to any story using the chapters below.\n\n"
             + (_chapters(picked) if picked else "")
             + "\n\nNew stories every day — subscribe so you don't miss them.\n\n"
-              "#redditstories #storytime #reddit")
+            + getattr(config, "ORIGINALITY_NOTE", "").strip()
+            + "\n\n#storytime #shortstory #fiction")
     vid = upload_video(str(path), title=title, description=desc,
-                       tags=["reddit stories", "storytime", "compilation",
-                             "reddit", "aitah"],
+                       tags=["storytime", "compilation", "short fiction",
+                             "original story", "stories"],
                        privacy_status=privacy or config.PRIVACY_STATUS,
                        token_file=acc.yt_token)
     print(f"Uploaded: https://youtube.com/watch?v={vid}")
@@ -415,7 +422,9 @@ def upload(path: Path, picked: list[dict] | None = None,
         import thumbnail
         mins = int(_duration(path) // 60)
         sub = f"{n} stories · {mins} minutes" if n else f"{mins} minutes"
-        th = thumbnail.build(title.replace(" (Reddit Compilation)", ""),
+        # Strip the parenthetical: it earns its place in a search result, but
+        # on a thumbnail it just steals size from the words that stop a scroll.
+        th = thumbnail.build(re.sub(r"\s*\([^)]*Compilation\)\s*$", "", title),
                              theme=theme,
                              out=OUT_DIR / f"{path.stem}_thumb.jpg",
                              subtitle=sub)
