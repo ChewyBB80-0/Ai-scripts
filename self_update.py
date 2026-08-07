@@ -111,3 +111,51 @@ LONG_RUNNING = {
 def stale_units(changed_files: list[str]) -> list[str]:
     """Systemd units still running old code after a pull, so callers can say so."""
     return sorted({unit for f, unit in LONG_RUNNING.items() if f in changed_files})
+
+
+def running_stale() -> list[str]:
+    """Units whose source file is NEWER than the process running it.
+
+    stale_units() above only knows at the moment of a pull. That single line
+    went to output/daily_run.log and nowhere else, so missing it meant never
+    hearing about it again -- which is part of how the playbox sat on old code.
+    This re-derives the same fact from scratch on every run, so the warning can
+    repeat until someone actually restarts the service, and it also catches a
+    hand-edited file, which a pull-time check never sees.
+
+    Compares the file's mtime against the start time of the unit's main
+    process. On Linux the mtime of /proc/<pid> IS the process start time, which
+    avoids parsing systemd's locale- and timezone-formatted timestamps.
+
+    Returns [] on any non-systemd host or on any error -- this informs, it
+    never blocks.
+    """
+    import os
+    if os.name == "nt":
+        return []
+    stale = []
+    for fname, unit in LONG_RUNNING.items():
+        try:
+            src = ROOT / fname
+            if not src.exists():
+                continue
+            r = _git_env_run(["systemctl", "--user", "show", unit,
+                              "-p", "MainPID", "--value"])
+            pid = int((r or "0").strip() or 0)
+            if pid <= 0:                       # not running: not stale, absent
+                continue
+            started = os.stat(f"/proc/{pid}").st_mtime
+            if src.stat().st_mtime > started + 1:   # 1s slack for pull/start races
+                stale.append(unit)
+        except Exception:
+            continue
+    return sorted(stale)
+
+
+def _git_env_run(cmd: list[str]) -> str:
+    """Run a command and return stdout, or '' if it fails at all."""
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+        return r.stdout if r.returncode == 0 else ""
+    except Exception:
+        return ""

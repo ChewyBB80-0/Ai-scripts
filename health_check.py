@@ -137,7 +137,24 @@ def collect() -> list[str]:
         except Exception:
             pass
 
-    # --- 3. disk ---------------------------------------------------------
+    # --- 3. services running code older than the repo --------------------
+    # The pull happens automatically; the long-running services do not pick it
+    # up, and the only notice was one line in daily_run.log that nobody reads.
+    # A push that "deployed" while the Discord bot kept answering from last
+    # week's code is invisible otherwise -- everything looks healthy.
+    try:
+        import self_update
+        stale = self_update.running_stale()
+        if stale:
+            problems.append(
+                f"**Running old code:** {', '.join(stale)} started before the "
+                f"current files. A pull landed but these kept the code they "
+                f"booted with.\n  Fix: `systemctl --user restart "
+                f"{' '.join(stale)}`")
+    except Exception as e:
+        print(f"(stale-code check skipped: {e})")
+
+    # --- 4. disk ---------------------------------------------------------
     try:
         free_gb = shutil.disk_usage(ROOT).free / 1e9
         if free_gb < DISK_FREE_MIN_GB:
@@ -146,7 +163,7 @@ def collect() -> list[str]:
     except Exception:
         pass
 
-    # --- 4. credentials still valid --------------------------------------
+    # --- 5. credentials still valid --------------------------------------
     # A silently-expired token is the nastiest failure here: everything looks
     # fine and nothing posts.
     try:
