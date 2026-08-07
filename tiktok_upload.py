@@ -34,12 +34,22 @@ CREATOR_INFO = "https://open.tiktokapis.com/v2/post/publish/creator_info/query/"
 DIRECT_INIT = "https://open.tiktokapis.com/v2/post/publish/video/init/"
 
 
+# Read lazily through env_file rather than os.environ directly. Running this
+# module by hand -- which is the ONLY way it is ever run, since auth needs a
+# browser -- used to die on a bare KeyError because an interactive shell does
+# not source .env the way systemd does for the services.
+_HINT = ("Add it to ~/media_maker/.env, or source the file first:\n"
+         "    set -a; . ~/media_maker/.env; set +a")
+
+
 def _key():
-    return os.environ["TIKTOK_CLIENT_KEY"]
+    import env_file
+    return env_file.require("TIKTOK_CLIENT_KEY", _HINT)
 
 
 def _secret():
-    return os.environ["TIKTOK_CLIENT_SECRET"]
+    import env_file
+    return env_file.require("TIKTOK_CLIENT_SECRET", _HINT)
 
 
 def _save(tok: dict):
