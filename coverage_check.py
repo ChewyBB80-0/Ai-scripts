@@ -59,16 +59,39 @@ def _stem(title: str) -> str:
 
 
 def coverage(days: int | None = None) -> dict:
-    """stem -> {'youtube': bool, 'instagram': bool, 'when': first timestamp}."""
+    """stem -> {'youtube': bool, 'instagram': bool, 'when': first, 'last': latest}.
+
+    Coverage is ALWAYS computed over the whole log. `days` only decides which
+    videos are worth reporting on, never which platform rows count.
+
+    That distinction is the whole correctness of this file. Reading rows through
+    the window instead made the two sides of a video invisible to each other
+    whenever they landed more than `days` apart -- and that is the normal shape
+    of a recovered failure, not an edge case. brother_in_law_uploaded_my_run
+    reached Instagram on Jul 30, failed YouTube three times, and only succeeded
+    there on Aug 7; the Instagram row fell outside the 7-day window, so it was
+    reported as a gap and --fix tried to post a second copy. Only the dedup
+    inside _post_video stopped a duplicate going out.
+    """
     cov: dict[str, dict] = {}
-    for ts, title, _vid, status in _rows(days):
-        c = cov.setdefault(_stem(title), {"youtube": False, "instagram": False, "when": ts})
+    for ts, title, _vid, status in _rows(None):          # full history, always
+        c = cov.setdefault(_stem(title),
+                           {"youtube": False, "instagram": False,
+                            "when": ts, "last": ts})
         if status in YT_OK:
             c["youtube"] = True
         if status in IG_OK:
             c["instagram"] = True
         c["when"] = min(c["when"], ts)
-    return cov
+        c["last"] = max(c["last"], ts)
+    if days is None:
+        return cov
+    # In scope = touched recently. Judged on everything.
+    # Compared as ISO strings, matching platform_start() and the rest of this
+    # file -- _rows() hands back raw CSV fields, so these are text, and mixing
+    # in a datetime here would raise on the first comparison.
+    cutoff = (datetime.now().astimezone() - timedelta(days=days)).isoformat()
+    return {s: c for s, c in cov.items() if c["last"] >= cutoff}
 
 
 def platform_start() -> dict:
@@ -205,8 +228,16 @@ def fix(days: int | None = None, dry_run: bool = False) -> str:
             failed.append(f"{stem} (render cleaned up)")
             continue
         try:
-            bot._post_video(video, _title_for(stem), platforms=missing)
-            done.append(f"{stem} -> {missing}")
+            # Believe what it DID, not what we asked for. _post_video skips
+            # silently when a config flag, account setting or its own dedup
+            # says no -- this used to be counted as a success and reported
+            # "Fixed", for videos that were never touched.
+            posted = bot._post_video(video, _title_for(stem), platforms=missing)
+            if missing in (posted or set()):
+                done.append(f"{stem} -> {missing}")
+            else:
+                failed.append(f"{stem} (skipped -- already posted there, or "
+                              f"{missing} posting is disabled)")
         except Exception as e:
             failed.append(f"{stem} ({e})")
     msg = f"Fixed {len(done)}: " + ", ".join(done) if done else "Nothing posted."

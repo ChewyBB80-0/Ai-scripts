@@ -259,11 +259,21 @@ def _post_video(path: str | Path, title: str, acc: Account | None = None,
     """Post one rendered video. platforms: subset of {'youtube','instagram'}
     (default both). The two platforms are posted independently -- a failure on
     one never blocks the other. publish_at (RFC3339 UTC): schedule the YouTube
-    upload to auto-release at that time instead of posting now."""
+    upload to auto-release at that time instead of posting now.
+
+    Returns the set of platforms it ACTUALLY posted to, which is not always
+    what was asked for: each block is gated on config flags, account settings
+    and a dedup check, and skipping is silent. Callers that report on the
+    outcome must use this rather than assume the request succeeded."""
     acc = acc or Account()
     base = Path(path).stem
     platforms = _norm_platforms(platforms)
     _assert_may_post()
+    # What actually went out, as opposed to what was asked for. Both platform
+    # blocks below are guarded by compound conditions with no else branch, so a
+    # skip is silent and indistinguishable from success to the caller --
+    # coverage_check's --fix reported "Fixed 2" for two videos it never touched.
+    _did: set[str] = set()
 
     if "youtube" in platforms:
         from youtube_upload import upload_video
@@ -282,6 +292,7 @@ def _post_video(path: str | Path, title: str, acc: Account | None = None,
                 publish_at=publish_at,
             )
             log_post(base, video_id, "scheduled" if publish_at else "posted")
+            _did.add("youtube")
             if publish_at:
                 print(f"Scheduled: {title} -> auto-releases {publish_at} "
                       f"(https://youtube.com/watch?v={video_id})")
@@ -339,6 +350,7 @@ def _post_video(path: str | Path, title: str, acc: Account | None = None,
                         print(f"Story post failed (Reel unaffected): {se}")
             # IG has now pulled the file (Reel + Story) -> remove it from R2.
             delete_hosted(path)
+            _did.add("instagram")
         except Exception as e:
             log_error(f"Instagram cross-post failed for {base}: {e}")
             print(f"Instagram cross-post failed (YouTube post unaffected): {e}")
@@ -355,6 +367,8 @@ def _post_video(path: str | Path, title: str, acc: Account | None = None,
             print(f"Queued for TikTok approval: {base}")
         except Exception as e:
             log_error(f"TikTok queue failed for {base}: {e}")
+
+    return _did
 
 
 def _video_seconds(path: str | Path) -> float:
