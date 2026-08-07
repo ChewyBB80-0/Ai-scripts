@@ -56,11 +56,24 @@ def pull(timeout: int = 120) -> tuple[bool, str, list[str]]:
     runs that are already up to date.
     """
     try:
-        dirty = _git("status", "--porcelain", timeout=30).stdout.strip()
+        # --untracked-files=no is load-bearing. The guard exists to protect a
+        # hand-patched box from having its edits clobbered -- that means
+        # MODIFIED TRACKED files. Plain --porcelain also lists untracked ones,
+        # and the pipeline writes new stories into stories/, a tracked
+        # directory, so every story the bot generated left another ?? line
+        # here. On the playbox that was 10 of 13 entries and self-update had
+        # been refusing to run since the feature shipped: the pipeline's own
+        # normal output was switching off its own updates.
+        #
+        # An untracked file that genuinely collides with an incoming one still
+        # stops the pull -- git refuses and the returncode branch below reports
+        # it -- so nothing gets silently overwritten by relaxing this.
+        dirty = _git("status", "--porcelain", "--untracked-files=no",
+                     timeout=30).stdout.strip()
         if dirty:
             n = len(dirty.splitlines())
-            return False, (f"Skipped update: {n} uncommitted change(s) on the box. "
-                           "Commit or discard them, then update."), []
+            return False, (f"Skipped update: {n} modified tracked file(s) on the "
+                           "box. Commit or discard them, then update."), []
 
         before = _head()
         branch = _branch()
