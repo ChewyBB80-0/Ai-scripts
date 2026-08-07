@@ -243,8 +243,13 @@ def _post_video(path: str | Path, title: str, acc: Account | None = None,
         try:
             video_id = upload_video(
                 str(path), title=title,
-                description="#shorts #redditstories #storytime #aitah #fyp",
-                tags=["shorts", "story", "reddit", "storytime", "minecraft", "parkour"],
+                # Says plainly that this is our own fiction. "#redditstories"
+                # and the reddit tag used to sit here, advertising the one
+                # thing we do NOT do -- see config.ORIGINALITY_NOTE.
+                description=(getattr(config, "ORIGINALITY_NOTE", "").strip()
+                             + "\n\n#shorts #storytime #shortstory #fiction #fyp").strip(),
+                tags=["shorts", "story", "storytime", "short fiction",
+                      "original story", "minecraft", "parkour"],
                 privacy_status=config.PRIVACY_STATUS,
                 token_file=acc.yt_token,
                 publish_at=publish_at,
@@ -364,7 +369,8 @@ def log_post(story_title: str, video_id: str | None, status: str):
 
 def run_once(background_dir: str | None = None, topic_hint: str = "",
              force: bool = False, account: Account | None = None,
-             platforms=None, publish_at: str | None = None):
+             platforms=None, publish_at: str | None = None,
+             story_title: str = ""):
     """One pass for ONE account. force=True: generate+post now, ignoring the
     daily-story target and the saga-drip queue (still respects YT quota).
     account=None -> the default (first) account; data paths (post log, queue)
@@ -440,7 +446,34 @@ def run_once(background_dir: str | None = None, topic_hint: str = "",
     # trend_discovery is used purely on faith, with nothing measuring it.
     story_source = "bank"
     hint_source = "caller" if topic_hint else ""
-    if os.environ.get("ANTHROPIC_API_KEY"):
+    if story_title:
+        # An explicitly requested story from the bank. The bank path otherwise
+        # picks at random, so there was no way to say "post this one" -- which
+        # is what you want when a story has been written or edited by hand.
+        # Skips generation entirely; the hint and Reddit paths don't apply.
+        bank = {s["title"]: s for s in load_story_bank()}
+        story = bank.get(story_title)
+        if story is None:
+            # Match on words, not the raw string: bank titles are
+            # underscore_joined, so a natural "fifth floor" would otherwise
+            # suggest nothing at all -- the case where help is most wanted.
+            def _norm(s):
+                return s.lower().replace("_", " ").replace("-", " ").strip()
+            _want = _norm(story_title)
+            near = [t for t in bank
+                    if _want in _norm(t)
+                    or all(w in _norm(t).split() for w in _want.split())]
+            log_error(f"No story titled {story_title!r} in the bank.")
+            print(f"No story titled {story_title!r}."
+                  + (f" Did you mean: {', '.join(near[:5])}?" if near else ""))
+            return
+        if story_title in already and not force:
+            print(f"{story_title!r} has already been posted. Re-run with --force "
+                  "to post it again.")
+            return
+        story_source = "requested"
+        print(f"Using the requested story: {story_title}")
+    elif os.environ.get("ANTHROPIC_API_KEY"):
         story = None
         # Priority: source from a REAL top Reddit post (hybrid -- proven-viral
         # content, then Claude condenses/cleans it). Falls back to fully AI if
@@ -579,7 +612,10 @@ def run_once(background_dir: str | None = None, topic_hint: str = "",
                                         handle=acc.handle,
                                         avatar_path=acc.logo,
                                         part_label=part_label,
-                                        subreddit=part.get("subreddit") or GENRE_SUBREDDIT.get(part.get("genre")))
+                                        subreddit=(part.get("subreddit")
+                                                   or GENRE_SUBREDDIT.get(part.get("genre"))
+                                                   if getattr(config, "SHOW_SUBREDDIT_BADGE", False)
+                                                   else None))
             if part["part"] == 1:
                 # Card slides away as the hook line's narration ends.
                 n_hook_words = len(hook.split())
@@ -739,6 +775,10 @@ if __name__ == "__main__":
                     help="RFC3339 UTC time to auto-release on YouTube instead of "
                          "posting now (e.g. 2026-07-21T13:30:00Z). Forces "
                          "--platform youtube and --force.")
+    ap.add_argument("--story", default="",
+                    help="Post THIS story from stories/ by title (the filename "
+                         "without .json), instead of generating one. Skips "
+                         "generation; add --force to re-post one already posted.")
     args = ap.parse_args()
     if args.schedule_at:
         args.force = True
@@ -759,7 +799,8 @@ if __name__ == "__main__":
                 _t0 = _time.time()
                 run_once(topic_hint=args.topic, force=args.force, account=acc,
                          platforms=args.platform,
-                         publish_at=args.schedule_at or None)
+                         publish_at=args.schedule_at or None,
+                         story_title=args.story)
                 if args.dry_render:
                     print(f"[dry-render] done in {_time.time() - _t0:.0f}s "
                           f"-- see output/pending_review/")

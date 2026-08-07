@@ -8,6 +8,7 @@ Output is a transparent PNG sized for a 1080-wide vertical video; assemble.py
 overlays it near the top of the frame.
 """
 
+import re
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
@@ -65,10 +66,23 @@ def _font(size: int, bold: bool = True):
 
 def format_hook_for_display(hook: str) -> str:
     """
-    Written surfaces (card, video title) show 'r/AITAH' so the story reads as
-    a real subreddit post; narration keeps plain 'AITAH' so TTS says it
-    naturally instead of 'r slash...'.
+    Historically this added 'r/' to written surfaces (card, video title) so the
+    story read as a real subreddit post, while narration kept plain 'AITAH' so
+    TTS said it naturally instead of 'r slash...'.
+
+    That framing is off by default now -- see config.SHOW_SUBREDDIT_BADGE. The
+    stories are ours; claiming they came from Reddit invited the exact scrutiny
+    that originality protects us from. The strip below also cleans the prefix
+    off stories written back when it was expected.
+
+    Only a LEADING 'r/' is stripped. A subreddit named inside the sentence is
+    the narrator talking, not us dressing the story up as a scraped post --
+    stripping that too turned "I posted on r/nosleep about it" into "I posted
+    on nosleep about it".
     """
+    import config
+    if not getattr(config, "SHOW_SUBREDDIT_BADGE", False):
+        return re.sub(r"^\s*r/(\w+)", r"\1", hook)
     if "r/AITAH" in hook:
         return hook
     return hook.replace("AITAH", "r/AITAH", 1)

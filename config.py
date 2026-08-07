@@ -58,6 +58,25 @@ END_CARD = True
 END_CARD_LINE = "FOLLOW FOR A NEW STORY EVERY DAY"
 END_CARD_SECONDS = 6.0
 
+# --- Authenticity posture (issue #6) -------------------------------------
+# YouTube's 2026 "inauthentic content" rules target, among other things,
+# "readings of material you did not create". Our stories are ORIGINAL -- we
+# write them, and Reddit sourcing has been off since the API was denied
+# (USE_REDDIT_SOURCE = False).
+#
+# Presenting original fiction as scraped subreddit posts took on exactly that
+# risk profile while doing none of the scraping, and originality is our single
+# strongest defence. So: keep the confession VOICE, drop the claim that it came
+# from Reddit. Set back to True to restore the r/ badge on hook cards.
+SHOW_SUBREDDIT_BADGE = False
+
+# Stated in every video description. Costs nothing, and it is the defence.
+ORIGINALITY_NOTE = (
+    "Original short fiction, written for this channel and narrated with a "
+    "synthetic voice. Not a real post; any resemblance to real people or "
+    "events is coincidental."
+)
+
 # CTA variants for the closing card. ~900 views and 0 subscribers means either
 # nobody reaches the ask or the ask doesn't work, and one fixed line can never
 # tell us which -- there's nothing to compare it against.
