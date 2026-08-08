@@ -66,23 +66,47 @@ def run(limit: int = 10):
         if not tok:
             break
 
+    def _secs(iso: str) -> int:
+        """PT1M4S -> 64. Needed to tell a loop from real watch time."""
+        import re
+        m = re.match(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", iso or "")
+        if not m:
+            return 0
+        h, mi, s = (int(g or 0) for g in m.groups())
+        return h * 3600 + mi * 60 + s
+
     meta = {}
     for i in range(0, len(ids), 50):
-        for v in yt.videos().list(part="snippet,statistics,status",
+        for v in yt.videos().list(part="snippet,statistics,status,contentDetails",
                                   id=",".join(ids[i:i + 50])).execute()["items"]:
             if v["status"].get("publishAt"):        # not released yet
                 continue
             meta[v["id"]] = (v["snippet"]["title"],
-                             int(v["statistics"].get("viewCount", 0)))
+                             int(v["statistics"].get("viewCount", 0)),
+                             _secs(v.get("contentDetails", {}).get("duration", "")))
 
     top = sorted(meta.items(), key=lambda kv: -kv[1][1])[:limit]
     start = (date.today() - timedelta(days=365)).isoformat()
     end = date.today().isoformat()
 
-    print(f"{'views':>6}  {'avg%':>5}  {'avg sec':>7}  title")
+    # Shorts LOOP, and YouTube counts the replays in averageViewDuration. So
+    # averageViewPercentage routinely exceeds 100% and is not "what fraction of
+    # the video they saw" -- a 29s Short came back at 247.8% (71s watched), and
+    # a 64s one at 2807% (1796s). Reading those as retention, and taking a plain
+    # mean across videos, produced "average retention 325.9%" and the advice to
+    # stop worrying about hooks. Both wrong.
+    #
+    # So: separate the two questions. Below 100% means they did not finish one
+    # pass -- that is the hook question. Above 100% means looping, which is a
+    # good sign but says nothing about drop-off, and is excluded from the
+    # first-pass average rather than allowed to dominate it.
+    #
+    # And weight by views. An 11-view video is noise; it should not outvote a
+    # 354-view one.
+    print(f"{'views':>6}  {'avg%':>7}  {'avg sec':>7}  {'len':>5}  title")
     print("-" * 78)
-    rows = []
-    for vid, (title, views) in top:
+    unfinished, looped = [], []
+    for vid, (title, views, seconds) in top:
         try:
             r = ya.reports().query(
                 ids="channel==MINE", startDate=start, endDate=end,
@@ -91,27 +115,37 @@ def run(limit: int = 10):
             got = r.get("rows") or [[0, 0]]
             pct, dur = got[0][0], got[0][1]
         except Exception as e:
-            print(f"{views:>6}  {'err':>5}          {title[:40]}  ({str(e)[:40]})")
+            print(f"{views:>6}  {'err':>7}          {title[:40]}  ({str(e)[:40]})")
             continue
-        rows.append(pct)
-        print(f"{views:>6}  {pct:>5.1f}  {dur:>7.0f}  {title[:44]}")
+        mark = "  LOOP" if pct > 100 else ""
+        (looped if pct > 100 else unfinished).append((pct, views))
+        print(f"{views:>6}  {pct:>7.1f}  {dur:>7.0f}  {seconds:>4}s  {title[:40]}{mark}")
 
-    if rows:
-        avg = sum(rows) / len(rows)
-        print("-" * 78)
-        print(f"  average retention across these: {avg:.1f}%")
-        print()
-        if avg < 40:
-            print("  READ: retention is LOW. Viewers leave before the payoff, so")
-            print("  they never see the end card or hear the CTA. Fix the HOOK and")
-            print("  the first 3 seconds -- not the ask, not the profile.")
-        elif avg < 70:
-            print("  READ: retention is MIDDLING. Some drop-off, but many do reach")
-            print("  the end. Worth improving hooks AND the follow ask/profile.")
-        else:
-            print("  READ: retention is HIGH -- people watch the whole thing and")
-            print("  still don't convert. The content works; the ASK and the")
-            print("  PROFILE are the problem. Fix those, not the stories.")
+    print("-" * 78)
+    if looped:
+        lv = sum(v for _, v in looped)
+        print(f"  {len(looped)} video(s) averaged OVER 100% -- viewers looped them "
+              f"({lv} views). Good, but it says nothing about drop-off, so they are\n"
+              f"  excluded from the figure below.")
+    if not unfinished:
+        print("  No video averaged under 100%: nothing dropped off before finishing.")
+        return
+    tv = sum(v for _, v in unfinished) or 1
+    avg = sum(p * v for p, v in unfinished) / tv
+    print(f"  view-weighted first-pass retention: {avg:.1f}%  "
+          f"({len(unfinished)} video(s), {tv} views)")
+    print()
+    if avg < 40:
+        print("  READ: retention is LOW. Viewers leave before the payoff, so")
+        print("  they never see the end card or hear the CTA. Fix the HOOK and")
+        print("  the first 3 seconds -- not the ask, not the profile.")
+    elif avg < 70:
+        print("  READ: retention is MIDDLING. Some drop-off, but many do reach")
+        print("  the end. Worth improving hooks AND the follow ask/profile.")
+    else:
+        print("  READ: retention is HIGH -- people watch the whole thing and")
+        print("  still don't convert. The content works; the ASK and the")
+        print("  PROFILE are the problem. Fix those, not the stories.")
 
 
 if __name__ == "__main__":
