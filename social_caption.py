@@ -161,9 +161,24 @@ def build_caption(hook: str, handle: str = "@ParkourFlux", part: int | None = No
     else:
         lines.append(ENGAGE[t])
 
+    # Drives a PROFILE VISIT, not a follow, and not a click to YouTube.
+    #
+    # This caption is Instagram-only (YouTube builds its own description in
+    # bot.py), and it used to end "full library on YouTube" -- sending Reels
+    # viewers to the channel with 936 views and 0 subscribers, away from the
+    # platform doing 6,209. Measured 2026-08-08: profile_views over 28 days was
+    # ZERO against 972 reach, which is why 48 posts converted 12 followers.
+    #
+    # "More on the page" is also true right now, for every viewer. "Follow for
+    # part two" is not -- saga parts drip over ~2 hours, so for most of a part
+    # 1's life the next part genuinely is not there yet.
+    # The finale line already sends them to the page for Part 1, so adding a
+    # second page ask stacks two identical CTAs and reads as filler.
+    _is_finale = bool(total_parts > 1 and part == total_parts)
     lines += [
         "",
-        f"Follow {handle} — new story every day \U0001F3AC (full library on YouTube)",
+        (f"New story every day \U0001F3AC {handle}" if _is_finale
+         else f"More stories like this on the page \U0001F440 {handle}"),
         "",
         " ".join(_dedupe([subreddit_tag(t, subreddit)] + NICHE_TAGS[t]
                          + topic_tags(hook) + BROAD_TAGS)[:5]),
@@ -228,7 +243,7 @@ Rules:
 - Line 2: one keyword-rich SEO line similar to: {kw}
 - Then ONE verdict QUESTION that baits comments (e.g. "Was I wrong?", "YTA or NTA?", "What would you have done?") — pick one that fits the genre
 - Then ONE share-bait line (make the reader want to SEND this to someone specific — vary the phrasing, never generic "share this")
-- Then: Follow {handle} — new story every day 🎬 (full library on YouTube)
+- Then: ONE line that drives a PROFILE VISIT, not a follow. The page already has dozens of these stories, so give them a reason to go and look NOW rather than a request to follow and wait. Vary the phrasing; never "link in bio", never mention YouTube.
 - Last line exactly these tags: {' '.join(tags)}
 - Correct grammar, spelling, and punctuation throughout (casual tone OK, errors not)
 - No other text. Total under 500 characters before the tags."""}],
