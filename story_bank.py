@@ -276,9 +276,13 @@ def generate_story_via_claude(topic_hint: str = "", api_key: str | None = None,
         # "landlord" fought THEME_WEIGHTS. "aita" is a genre marker, not a
         # motif. Note these protect the single words only -- a PAIRING like
         # "parkour course" can still be flagged as an overused situation.
-        _protected |= {"minecraft", "aita", "aitah", "reddit", "video", "channel"}
+        _protected |= {"aita", "aitah", "reddit", "video", "channel"}
+        # Only protected while we are DELIBERATELY steering toward that world.
+        # With PARKOUR_META_SHARE at 0 these are no longer brand vocabulary in a
+        # story -- they are a motif like any other, and a second occurrence
+        # should be caught rather than waved through.
         if getattr(_cfg, "PARKOUR_META_SHARE", 0):
-            _protected |= {"parkour", "speedrun", "speedrunning"}
+            _protected |= {"parkour", "speedrun", "speedrunning", "minecraft"}
         # Words making up a PROVEN_SITUATIONS entry are protected too. Exempting
         # the pair "landlord charged" achieves nothing if "charged" is still on
         # the word ban list -- the model is steered off the winner either way.
@@ -341,8 +345,16 @@ def generate_story_via_claude(topic_hint: str = "", api_key: str | None = None,
             "(destroyed/confiscated/banned/failed/sold the narrator's thing), "
             "it is TOO CLOSE even if the specific details differ -- discard it "
             "and pick a different role AND a different kind of harm.\n")
-    prompt = f"""Write a "random story" script for a Minecraft parkour TikTok/Shorts video.
+    # Deliberately does NOT name the footage. The gameplay is wallpaper -- it
+    # keeps the eye busy while the story works -- and a story written "for a
+    # Minecraft parkour video" quietly drifts toward gaming references that
+    # only make sense over that footage. The goal is stories that would carry
+    # any background, so they can move to a second channel unchanged.
+    prompt = f"""Write a short first-person story script for a vertical TikTok/Shorts video.
 Style: {genre}.
+The video is narrated over unrelated background gameplay footage, so the story
+must stand entirely on its own -- never reference the footage, gaming, Minecraft
+or parkour unless the story is genuinely about that.
 Craft rules (this is what makes these go viral):
 - HOOK -- the first sentence is the WHOLE game. Open an unresolvable curiosity
   loop: state something specific and unfinished that forces the viewer to think
@@ -426,7 +438,7 @@ def condense_reddit_post(post: dict, api_key: str | None = None) -> dict:
     cleaned, and PII-stripped. Returns {title, beats, genre}."""
     import anthropic
     client = anthropic.Anthropic(api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"))
-    prompt = f"""Condense this REAL Reddit post into a short first-person video script for a Minecraft parkour TikTok/Shorts video. Keep the REAL events and emotional core -- do NOT invent a different story, just tighten and clean it.
+    prompt = f"""Condense this REAL Reddit post into a short first-person video script for a vertical TikTok/Shorts video. It is narrated over unrelated background footage, so never reference the footage or gaming. Keep the REAL events and emotional core -- do NOT invent a different story, just tighten and clean it.
 
 Source post from r/{post.get('subreddit')}:
 Title: {post.get('title','')}

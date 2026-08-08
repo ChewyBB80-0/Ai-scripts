@@ -242,7 +242,19 @@ HOOK_CARD_AVATAR = "branding/logo.png"
 # catches a near-duplicate on the second occurrence.
 # At 0.3 the angle still appears often; it just isn't compulsory on top of a
 # theme constraint.
-PARKOUR_META_SHARE = 0.3
+#
+# TURNED OFF 2026-08-08, deliberately, knowing it was a measured winner.
+#
+# Parkour-meta stories tie the conflict to the narrator's Minecraft life, and
+# two of the three best YouTube performers are that shape. But they only work on
+# a channel whose wallpaper is parkour -- they cannot move to a second channel,
+# and the owner's goal is now stories good enough to carry any footage. A story
+# that needs the background to make sense is a story that only works here.
+#
+# The parkour footage stays. This is about what the stories are ABOUT.
+#
+# Set back to 0.3 to restore the angle; nothing else needs changing.
+PARKOUR_META_SHARE = 0.0
 
 # ---------------------------------------------------------------------------
 # TikTok approval gate (added 2026-07-22)
