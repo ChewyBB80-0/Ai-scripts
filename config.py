@@ -68,6 +68,20 @@ END_CARD_SECONDS = 6.0
 # MEDIAMAKER_ALLOW_POST=1 for that run rather than editing this.
 POSTING_HOST = "krishplaybox"
 
+# Situations the DATA says work, exempt from the motif ban's pair check.
+#
+# The ban catches a repeated SITUATION even when the individual words belong to
+# a weighted theme -- that is what stops three near-identical stories shipping.
+# But it cannot tell "we keep accidentally writing this" from "this is our best
+# performer": "landlord charged" hit 735 views on Instagram against a 124
+# median, ~6x the pack, and the ban was about to steer away from it.
+#
+# So winners are named here explicitly. Adding a line is a deliberate decision
+# to make MORE of something, not an accident. Remove it when it stops working.
+PROVEN_SITUATIONS = [
+    "landlord charged",     # 735v vs 124 median (2026-08-08)
+]
+
 # --- Authenticity posture (issue #6) -------------------------------------
 # YouTube's 2026 "inauthentic content" rules target, among other things,
 # "readings of material you did not create". Our stories are ORIGINAL -- we

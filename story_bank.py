@@ -279,6 +279,11 @@ def generate_story_via_claude(topic_hint: str = "", api_key: str | None = None,
         _protected |= {"minecraft", "aita", "aitah", "reddit", "video", "channel"}
         if getattr(_cfg, "PARKOUR_META_SHARE", 0):
             _protected |= {"parkour", "speedrun", "speedrunning"}
+        # Words making up a PROVEN_SITUATIONS entry are protected too. Exempting
+        # the pair "landlord charged" achieves nothing if "charged" is still on
+        # the word ban list -- the model is steered off the winner either way.
+        for _s in (getattr(_cfg, "PROVEN_SITUATIONS", []) or []):
+            _protected |= {w for w in _s.lower().split() if len(w) > 3}
         # Count over EVERYTHING the caller sent, not just the 25 shown above.
         # Repetition on this channel is slow: the three "landlord charged me
         # for unauthorised X" stories were spread wide enough that they never
@@ -301,7 +306,14 @@ def generate_story_via_claude(topic_hint: str = "", api_key: str | None = None,
             f"{a} {b}" for ws in _words
             for a, b in zip(ws, ws[1:])
             if len(a) > 3 and len(b) > 3 and a not in _stop and b not in _stop)
-        _over_pairs = [p for p, n in _pairs.most_common(6) if n >= 2]
+        # Proven winners are never banned. config.PROVEN_SITUATIONS names the
+        # pairings the data says to make MORE of -- without this the ban steers
+        # away from the best performer precisely because it recurs, which is
+        # backwards. Matched loosely so "landlord charged" also exempts
+        # "landlord charged me".
+        _proven = [s.lower() for s in (getattr(_cfg, "PROVEN_SITUATIONS", []) or [])]
+        _over_pairs = [p for p, n in _pairs.most_common(6)
+                       if n >= 2 and not any(w in p or p in w for w in _proven)]
 
         if _over or _over_pairs:
             _avoid_txt += "OVERUSED ON THIS CHANNEL -- BANNED for this story.\n"
