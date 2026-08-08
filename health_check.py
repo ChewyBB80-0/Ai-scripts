@@ -32,6 +32,14 @@ from zoneinfo import ZoneInfo
 ROOT = Path(__file__).parent
 sys.path.insert(0, str(ROOT))
 
+# systemd supplies .env via EnvironmentFile, so the timer was always fine -- but
+# a hand-run without sourcing it saw empty credentials and reported "Instagram
+# token is invalid" about a perfectly good token. False alarms are worse here
+# than anywhere else in the project: this is the monitor, and the whole reason
+# it exists is that a noisy one gets ignored.
+import env_file
+env_file.load()
+
 STATE = ROOT / "output" / "health_state.json"
 POST_LOG = ROOT / "output" / "post_log.csv"
 ERROR_LOG = ROOT / "output" / "errors.log"
