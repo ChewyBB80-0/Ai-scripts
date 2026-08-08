@@ -353,8 +353,14 @@ def generate_story_via_claude(topic_hint: str = "", api_key: str | None = None,
     prompt = f"""Write a short first-person story script for a vertical TikTok/Shorts video.
 Style: {genre}.
 The video is narrated over unrelated background gameplay footage, so the story
-must stand entirely on its own -- never reference the footage, gaming, Minecraft
-or parkour unless the story is genuinely about that.
+must stand entirely on its own. Never reference the footage or the video itself,
+and do not tie the conflict to the narrator's GAMING life -- no Minecraft, no
+worlds or saves, no servers, no speedruns, no streaming or channel drama. That
+kind of story only makes sense to someone watching this particular wallpaper.
+Real-world subjects are all fair game, and that INCLUDES real-life parkour or
+freerunning -- a story about training, an injury, a spot, a rival, a coach or a
+trespassing charge is a real-world story like any other. The line is
+gaming-life drama, not the word "parkour".
 Craft rules (this is what makes these go viral):
 - HOOK -- the first sentence is the WHOLE game. Open an unresolvable curiosity
   loop: state something specific and unfinished that forces the viewer to think

@@ -251,7 +251,13 @@ HOOK_CARD_AVATAR = "branding/logo.png"
 # and the owner's goal is now stories good enough to carry any footage. A story
 # that needs the background to make sense is a story that only works here.
 #
-# The parkour footage stays. This is about what the stories are ABOUT.
+# What is OFF is GAMING-life drama: Minecraft, worlds and saves, servers,
+# speedruns, streaming and channel drama. Real-life parkour is NOT off -- a
+# story about training, an injury, a spot, a rival or a trespassing charge is a
+# real-world story that travels to any channel, same as landlords or in-laws.
+# The line is the gaming frame, not the word "parkour".
+#
+# The parkour footage stays either way. This is about what the stories are ABOUT.
 #
 # Set back to 0.3 to restore the angle; nothing else needs changing.
 PARKOUR_META_SHARE = 0.0
