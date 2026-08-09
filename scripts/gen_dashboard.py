@@ -73,6 +73,45 @@ def _read(path: Path, default):
         return default
 
 
+PHIST = ROOT / "dashboard" / "post_history.json"
+
+
+def _update_post_history(accounts: list, now: str) -> dict:
+    """Snapshot every post's view count, so a post can later be compared to
+    another AT THE SAME AGE.
+
+    Channel totals cannot answer the only question that matters when judging a
+    new video: is it doing better or worse than the last one? A 2-hour-old post
+    always looks like a failure next to a 10-hour-old one, and reading that gap
+    as underperformance is a mistake that has already been made here. Storing
+    (published_at, observed_at, views) makes "views by hour N" computable.
+
+    Nothing backfills: a post only gets a curve from the first run after this
+    exists. That is the cost of not having collected it sooner.
+    """
+    h = _read(PHIST, {})
+    for a in accounts:
+        for v in a["videos"]:
+            k = f"yt:{v['videoId']}"
+            row = h.setdefault(k, {"pub": v.get("publishedAt", ""), "ch": a["id"],
+                                   "plat": "YouTube", "title": v.get("title", ""),
+                                   "pts": []})
+            row["pts"].append([now, v.get("views", 0)])
+        for m in a["ig"].get("media", []):
+            k = f"ig:{m['id']}"
+            row = h.setdefault(k, {"pub": m.get("timestamp", ""), "ch": a["id"],
+                                   "plat": "Instagram",
+                                   "title": (m.get("caption") or "")[:70], "pts": []})
+            row["pts"].append([now, m.get("views", 0)])
+    # Keep it bounded: 120 points per post is ~5 days of hourly runs, which is
+    # the window where a short's curve is still moving.
+    for row in h.values():
+        row["pts"] = row["pts"][-120:]
+    PHIST.parent.mkdir(parents=True, exist_ok=True)
+    PHIST.write_text(json.dumps(h))
+    return h
+
+
 def build():
     import config  # noqa: F401  -- loads .env
     from accounts import all_accounts
@@ -130,8 +169,11 @@ def build():
         print("No per-account stats yet -- run channel_stats.py / ig_stats.py first.")
         return
 
-    hist = _update_history(per_acc, fetched or datetime.now().isoformat(timespec="seconds"))
-    data = {"accounts": accounts, "history": hist, "fetched": fetched,
+    now = fetched or datetime.now().isoformat(timespec="seconds")
+    hist = _update_history(per_acc, now)
+    phist = _update_post_history(accounts, now)
+    data = {"accounts": accounts, "history": hist, "postHistory": phist,
+            "fetched": fetched,
             "rpm": RPM, "yppSubs": YPP_SUBS, "yppViews": YPP_VIEWS_90D}
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(_TEMPLATE.replace("/*DATA*/", json.dumps(data)), encoding="utf-8")
@@ -242,6 +284,13 @@ select.range{background:var(--alt);border:1px solid var(--border);color:var(--te
 .dt a{color:var(--text);text-decoration:none}.dt a:hover{text-decoration:underline}
 .dt .tag{font-size:10px;padding:2px 6px;border-radius:5px;background:var(--alt);color:var(--muted);white-space:nowrap}
 .dt .tag.yt{color:var(--red)}.dt .tag.ig{color:var(--pink)}
+.cmp{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
+.cmpc{background:var(--alt);border:1px solid var(--border);border-radius:9px;padding:14px 16px}
+.cmpc h4{margin:0 0 2px;font-size:14px}
+.cmpc .h{font-size:11px;color:var(--muted);margin-bottom:10px}
+.cmpr{display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0}
+.cmpr span:last-child{font-variant-numeric:tabular-nums;font-weight:600}
+.cmpc .off{font-size:10px;color:var(--amber)}
 </style></head><body>
 <div class="app">
  <aside class="side"><div class="brand">Channels</div>
@@ -293,6 +342,20 @@ select.range{background:var(--alt);border:1px solid var(--border);color:var(--te
    <div class="card"><div class="ct">Recent posts</div><div class="thumbs" id="thumbs"></div></div>
    <div class="card"><div class="ct">🏆 Most-viewed video (all platforms)</div><div class="feat" id="feat"></div></div>
    <div class="card"><div class="ct">Posting activity (videos/day)</div><div class="scroll" id="cPosts"></div></div>
+   <div class="card" id="cmpCard">
+    <div class="ct">Channel comparison</div>
+    <div id="cmpBody"></div>
+   </div>
+   <div class="card">
+    <div class="charthead">
+     <div class="ct" style="margin:0">Views by age &mdash; like-for-like</div>
+     <div class="chartctl">
+      <select class="range" id="ageMetric"><option value="Instagram" selected>Instagram</option><option value="YouTube">YouTube</option></select>
+     </div>
+    </div>
+    <div class="scroll" id="cAge"></div>
+    <div class="note" id="ageNote"></div>
+   </div>
    <div class="card">
     <div class="charthead">
      <div class="ct" style="margin:0">Every post <span class="note" id="dtCount"></span></div>
