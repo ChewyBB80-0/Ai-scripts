@@ -25,13 +25,20 @@
       "revenge"
     ],
     "yt_token": "token_carveteran.json",
-    "footage_dir": "footage/driving",
+    "footage_dir": "footage",
     "logo": "branding/logo_carveteran.png",
     "daily_target": 1,
     "ig_enabled": true,
     "content_type": "dialogue",
-    "yt_tags": ["shorts", "car maintenance", "car tips", "save money on car repairs",
-                "mechanic advice", "car advice", "auto repair"],
+    "yt_tags": [
+      "shorts",
+      "car maintenance",
+      "car tips",
+      "save money on car repairs",
+      "mechanic advice",
+      "car advice",
+      "auto repair"
+    ],
     "yt_hashtags": "#shorts #carmaintenance #cartips #mechanic #savemoney",
     "ig_hashtags": "#reels #fyp #cartips #carmaintenance #mechanic #savemoney",
     "post_log": "output/carveteran/post_log.csv",
