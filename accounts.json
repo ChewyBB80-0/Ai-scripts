@@ -29,6 +29,7 @@
     "logo": "branding/logo_carveteran.png",
     "daily_target": 1,
     "ig_enabled": false,
+    "content_type": "dialogue",
     "yt_tags": ["shorts", "car maintenance", "car tips", "save money on car repairs",
                 "mechanic advice", "car advice", "auto repair"],
     "yt_hashtags": "#shorts #carmaintenance #cartips #mechanic #savemoney",

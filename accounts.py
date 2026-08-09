@@ -34,6 +34,13 @@ class Account:
     logo: str = "branding/logo.png"
     daily_target: int = 1
     ig_enabled: bool = True
+    # What this channel makes. bot.py's whole pipeline is Reddit-style narrated
+    # STORIES; the car channel is two-voice dialogue from dialogue_video.py and
+    # shares nothing but the assembler. Running the story path against it once
+    # produced a Reddit revenge story on a car-advice channel, and nothing
+    # errored -- enabled:false was all that stood in the way. run_once() checks
+    # this now, so the mistake is refused rather than remembered.
+    content_type: str = "story"
     # Publishing metadata. The defaults are the story channel's, which is what
     # these were hardcoded to before a second channel existed -- posting car
     # advice with them would have labelled it Minecraft parkour short fiction,

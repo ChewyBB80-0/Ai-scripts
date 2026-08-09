@@ -423,6 +423,16 @@ def run_once(background_dir: str | None = None, topic_hint: str = "",
     acc = account or load_accounts()[0]
     POST_LOG = Path(acc.post_log)
     QUEUE_FILE = Path(acc.queue_file)
+    # This whole function generates and posts Reddit-style narrated stories. An
+    # account that makes something else must never reach it, whatever flags were
+    # passed -- --account plus --force is enough to bypass `enabled`, which is
+    # exactly how a Reddit revenge story once got generated for a car channel.
+    if acc.content_type != "story":
+        raise RuntimeError(
+            f"Account '{acc.id}' is content_type={acc.content_type!r}, not "
+            f"'story'. bot.py only makes narrated Reddit-style stories; posting "
+            f"one to this channel puts the wrong channel's content on it. Use "
+            f"the renderer for that content type instead (dialogue_video.py).")
     Path(acc.out_dir).mkdir(parents=True, exist_ok=True)
     print(f"[{acc.id}] run")
     # One background SET per video: if footage/ has themed subfolders, each
