@@ -36,6 +36,22 @@ def _insights(mid: str, token: str) -> dict:
     return {}
 
 
+def _profile(token: str) -> dict:
+    """Follower count and account type.
+
+    Needed because Instagram's monetisation gates are on FOLLOWERS, not views --
+    so a dashboard that only tracked views could not show how close the account
+    was to any of them.
+    """
+    try:
+        r = requests.get(f"{GRAPH}/me", params={
+            "fields": "username,account_type,followers_count,media_count",
+            "access_token": token}, timeout=30)
+        return r.json() if r.status_code == 200 else {}
+    except Exception:
+        return {}
+
+
 def fetch(token: str) -> dict:
     r = requests.get(f"{GRAPH}/me/media", params={
         "fields": "id,caption,media_type,permalink,timestamp",
@@ -55,9 +71,13 @@ def fetch(token: str) -> dict:
             "shares": ins.get("shares", 0),
             "timestamp": m.get("timestamp", ""),
         })
+    p = _profile(token)
     return {
         "fetchedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "totalViews": sum(m["views"] for m in media),
+        "followers": p.get("followers_count", 0),
+        "accountType": p.get("account_type", ""),
+        "username": p.get("username", ""),
         "media": media,
     }
 

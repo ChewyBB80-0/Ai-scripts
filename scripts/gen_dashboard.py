@@ -157,6 +157,11 @@ def build():
             "count": len(vids),
             "videos": vids,
             "ig": ig,
+            "followers": ig.get("followers", 0),
+            # Instagram gates every monetisation feature on a professional
+            # account, so it is a threshold in its own right, not trivia.
+            "igPro": ig.get("accountType", "") in ("MEDIA_CREATOR", "BUSINESS",
+                                                   "CREATOR"),
             "posts": _load_posts(out_dir / "post_log.csv"),
             "ttDrafts": tt_drafts if is_main else 0,
             "ttQueue": tt_queue if is_main else [],
@@ -408,13 +413,16 @@ select.range{background:var(--alt);border:1px solid var(--border);color:var(--te
 
   <section class="tab" data-t="revenue">
    <div class="tiles">
-    <div class="tile"><div class="v" style="color:var(--mint)" id="ract">$0.00</div><div class="l">Actual revenue</div></div>
-    <div class="tile"><div class="v" id="rest">$0</div><div class="l">Est. earned value</div></div>
-    <div class="tile"><div class="v" id="rmo">$0</div><div class="l">Est. /mo at pace</div></div></div>
-   <div class="card"><div class="ct">Path to monetization (YouTube Partner Program)</div>
+    <div class="tile"><div class="v" style="color:var(--mint)" id="ract">$0.00</div><div class="l">Actual revenue booked</div></div>
+    <div class="tile"><div class="v" id="rfoll">0</div><div class="l">IG followers</div></div>
+    <div class="tile"><div class="v" id="rigv">0</div><div class="l">IG views tracked</div></div></div>
+   <div class="card"><div class="ct">Instagram — the live path</div>
+    <div id="igGates"></div>
+    <div class="note" id="igNote"></div></div>
+   <div class="card"><div class="ct">YouTube Partner Program — for reference</div>
     <div style="margin-bottom:14px"><div style="display:flex;justify-content:space-between;font-size:13px"><span>Subscribers</span><span id="subProg" class="rv"></span></div><div class="bar"><i id="subBar"></i></div></div>
     <div><div style="display:flex;justify-content:space-between;font-size:13px"><span>Views (toward 10M/90d)</span><span id="viewProg" class="rv"></span></div><div class="bar"><i id="viewBar" style="background:var(--amber)"></i></div></div>
-    <div class="note">Actual revenue is $0 until you hit YPP (1,000 subs + 10M Shorts views/90d). Estimate applies a $0.10/1k Shorts RPM to current views — what today's views would be worth once monetized.</div></div>
+    <div class="note" id="yppNote"></div></div>
   </section>
   <section class="tab" data-t="assistant">
    <div class="card" style="display:flex;align-items:center;justify-content:space-between">
@@ -473,6 +481,8 @@ function combine(list){
   ttDrafts:list.reduce((n,a)=>n+(a.ttDrafts||0),0),
   ttQueue:list.flatMap(a=>a.ttQueue||[]),
   ttConnected:list.some(a=>a.ttConnected),
+  followers:list.reduce((n,a)=>n+(a.followers||0),0),
+  igPro:list.every(a=>a.igPro),
   ig, history:ALL.history, rpm:ALL.rpm, yppSubs:ALL.yppSubs, yppViews:ALL.yppViews,
   fetched:ALL.fetched, ids:list.map(a=>a.id),
  };
@@ -874,11 +884,42 @@ function render(){
  $('ttList').innerHTML=D.videos.map(v=>`<div class="row"><span class="rtitle">${v.title}</span><input class="mv" type="number" min="0" placeholder="0" value="${tt[v.videoId]||''}" data-id="${v.videoId}"></div>`).join('');
  $('ttList').querySelectorAll('input.mv').forEach(inp=>inp.addEventListener('input',()=>{tt[inp.dataset.id]=+inp.value||0;localStorage.setItem(TTK,JSON.stringify(tt));render()}));
  // revenue tab
- const est=allViews/1000*D.rpm;$('rest').textContent=money(est);$('ract').textContent='$0.00';
+ // Revenue. Deliberately shows NO estimated dollar figure for Instagram.
+ // The old tab multiplied views by a flat $0.10/1k YouTube Shorts RPM and
+ // printed the result as "earned value" -- but the channel that actually became
+ // eligible did so on Instagram, whose creator payouts are invite-only, vary by
+ // region and programme, and are not published. Inventing a number there would
+ // be worse than showing none: it looks like data. What IS knowable is
+ // followers, views, and which eligibility gates have been crossed.
+ $('ract').textContent='$0.00';
+ $('rfoll').textContent=fmt(D.followers||0);
+ $('rigv').textContent=fmt(IG.totalViews||0);
+ const gates=[
+   {n:'Professional account', have:D.igPro?1:0, need:1, unit:'', what:'required for every Instagram monetisation feature'},
+   {n:'1,000 followers', have:D.followers||0, need:1000, unit:'followers', what:'entry-level creator features'},
+   {n:'10,000 followers', have:D.followers||0, need:10000, unit:'followers', what:'Subscriptions and Live badges'},
+ ];
+ $('igGates').innerHTML=gates.map(g=>{
+   const pct=Math.min(100,g.need?g.have/g.need*100:0);
+   const done=g.have>=g.need;
+   const val=g.unit?`${fmt(g.have)} / ${fmt(g.need)}`:(done?'yes':'no');
+   return `<div style="margin-bottom:14px">
+     <div style="display:flex;justify-content:space-between;font-size:13px">
+       <span>${g.n} ${done?'<span class="st live">MET</span>':''}</span>
+       <span class="rv">${val}</span></div>
+     <div class="bar"><i style="width:${pct}%;background:${done?'var(--mint)':'var(--violet)'}"></i></div>
+     <div class="note" style="margin-top:3px">${g.what}</div></div>`;
+ }).join('');
+ $('igNote').innerHTML='Thresholds gate <em>features</em>, not payment. Instagram\u2019s creator '+
+   'bonus programmes are invite-only and their rates are not published, so no dollar '+
+   'estimate is shown here \u2014 a made-up RPM would look like a measurement. '+
+   'Book real payouts against "Actual revenue" once any arrive.';
  const days=Math.max(1,D.history.length>1?(new Date(D.history[D.history.length-1].t)-new Date(D.history[0].t))/86400000:1);
- $('rmo').textContent=money(est/days*30);
  $('subProg').textContent=fmt(D.subs)+' / '+fmt(D.yppSubs);$('subBar').style.width=Math.min(100,D.subs/D.yppSubs*100)+'%';
  $('viewProg').textContent=fmt(D.totalViews)+' / '+fmt(D.yppViews);$('viewBar').style.width=Math.min(100,D.totalViews/D.yppViews*100)+'%';
+ $('yppNote').textContent='YouTube needs 1,000 subs plus 10M Shorts views in 90 days '+
+   '(or 4,000 watch hours). Shown for reference \u2014 Instagram is where this account '+
+   'actually reaches people, roughly 6x YouTube on the same videos.';
 }
 buildChanSel();applyScope();renderHeader();render();
 // chart Delta/Cumulative toggle + time range
