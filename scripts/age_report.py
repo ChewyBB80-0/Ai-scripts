@@ -134,7 +134,14 @@ def main():
     if not a.only_print:
         import config  # noqa: F401  -- loads .env
         from discord_notify import send_dm
-        send_dm(text)
+        # send_dm never raises and returns False on failure. Ignoring that makes
+        # a report that silently never arrives indistinguishable from one that
+        # did -- and this runs unattended from a timer, so nobody is watching
+        # stdout. Fail loudly instead: a non-zero exit shows up in journalctl.
+        if not send_dm(text):
+            print("  DM FAILED -- report was not delivered", file=sys.stderr)
+            raise SystemExit(1)
+        print("  DM delivered")
 
 
 if __name__ == "__main__":
