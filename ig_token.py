@@ -14,8 +14,8 @@ existing one is at least 24 hours old:
     GET https://graph.instagram.com/refresh_access_token
         ?grant_type=ig_refresh_token&access_token=<current>
 
-Refreshed weekly, the token is never more than 7 days from a fresh 60, so an
-expiry needs the box to be off for two months.
+Refreshed every three weeks, the token is never older than 21 days and always
+has ~39 days left, so an expiry needs the box to be off for well over a month.
 
 WHERE THE TOKEN LIVES. .env stays the source of truth for the FIRST token, the
 one you paste in by hand. Refreshed tokens go to output/ig_tokens.json, which
@@ -40,11 +40,12 @@ ROOT = Path(__file__).parent
 STORE = ROOT / "output" / "ig_tokens.json"
 REFRESH_URL = "https://graph.instagram.com/refresh_access_token"
 
-# Refresh once the token is a week old. Each refresh resets the clock to 60
-# days, so this keeps ~53 days of headroom at all times. Meta requires a token
-# to be at least 24h old before it can be refreshed, so this is also safely
-# clear of that floor.
-REFRESH_AFTER_DAYS = 7
+# Refresh once the token is three weeks old. Each refresh resets the clock to
+# 60 days, so the token is never older than 21 days and always has ~39 days of
+# life left -- that 39 days is also how long the box can stay off before a
+# token actually lapses. Comfortably clear of Meta's floor, which rejects a
+# refresh on any token under 24h old.
+REFRESH_AFTER_DAYS = 21
 DAY = 86400
 
 
