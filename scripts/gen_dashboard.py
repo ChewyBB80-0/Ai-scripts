@@ -296,15 +296,6 @@ select.range{background:var(--alt);border:1px solid var(--border);color:var(--te
 .cmpr{display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0}
 .cmpr span:last-child{font-variant-numeric:tabular-nums;font-weight:600}
 .cmpc .off{font-size:10px;color:var(--amber)}
-.gift{display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
-.gift label{font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:4px}
-.gift label.chk{flex-direction:row;align-items:center;gap:7px;color:var(--text);font-size:13px;align-self:flex-end;padding-bottom:6px}
-.gift input[type=number]{width:130px;padding:7px 9px;border:1px solid var(--border);border-radius:7px;background:var(--alt);color:var(--text);font-size:14px;font-variant-numeric:tabular-nums}
-.gift input[type=checkbox]{width:16px;height:16px;accent-color:var(--mint)}
-.gstat{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:12px}
-.gstat div{background:var(--alt);border:1px solid var(--border);border-radius:9px;padding:12px 14px}
-.gstat .gv{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
-.gstat .gl{font-size:11px;color:var(--muted);margin-top:2px}
 </style></head><body>
 <div class="app">
  <aside class="side"><div class="brand">Channels</div>
@@ -425,18 +416,7 @@ select.range{background:var(--alt);border:1px solid var(--border);color:var(--te
     <div class="tile"><div class="v" style="color:var(--mint)" id="ract">$0.00</div><div class="l">Actual revenue booked</div></div>
     <div class="tile"><div class="v" id="rfoll">0</div><div class="l">IG followers</div></div>
     <div class="tile"><div class="v" id="rigv">0</div><div class="l">IG views tracked</div></div></div>
-   <div class="card"><div class="ct">Instagram Gifts — Stars received</div>
-    <div class="gift">
-     <label>Stars received <input id="gStars" type="number" min="0" placeholder="0"></label>
-     <label>Paid out so far ($) <input id="gPaid" type="number" min="0" step="0.01" placeholder="0"></label>
-     <label class="chk"><input id="gPayout" type="checkbox"> Payout account set up</label>
-    </div>
-    <div id="gBody"></div>
-    <div class="note">Stars are not a function of views &mdash; a fan has to choose to send one, so a
-     Reel can do well and earn nothing. Instagram publishes no per-view rate, and none is assumed here.
-     Read your Star count from the app (Professional dashboard &rarr; Gifts) and enter it; the API does
-     not expose it. Saved in this browser.</div></div>
-   <div class="card"><div class="ct">Instagram — eligibility</div>
+   <div class="card"><div class="ct">Instagram — the live path</div>
     <div id="igGates"></div>
     <div class="note" id="igNote"></div></div>
    <div class="card"><div class="ct">YouTube Partner Program — for reference</div>
@@ -845,48 +825,6 @@ function multiLine(el,series){
    `<div style="font-size:11px;margin-top:6px;line-height:1.7">${key}</div>`;
 }
 
-// ---- Instagram Gifts ----
-// $0.01 per Star to the creator, and Meta pays nothing out until the balance
-// clears $25 -- so 2,500 Stars is the first real milestone, not a view count.
-// Stars are entered by hand because the Graph API does not expose them.
-const STAR_USD=0.01, PAYOUT_MIN=25;
-const GK='pf_gifts';
-let GIFT={stars:0,paid:0,payout:false};
-try{GIFT=Object.assign(GIFT,JSON.parse(localStorage.getItem(GK)||'{}'))}catch(e){}
-function saveGift(){try{localStorage.setItem(GK,JSON.stringify(GIFT))}catch(e){}}
-function renderGifts(){
- const earned=GIFT.stars*STAR_USD;
- const owed=Math.max(0,earned-(GIFT.paid||0));
- const pct=Math.min(100,earned/PAYOUT_MIN*100);
- const need=Math.max(0,Math.ceil((PAYOUT_MIN-earned)/STAR_USD));
- $('gBody').innerHTML=
-  '<div class="gstat">'+
-   `<div><div class="gv">${fmt(GIFT.stars)}</div><div class="gl">Stars received</div></div>`+
-   `<div><div class="gv" style="color:var(--mint)">${money(earned)}</div><div class="gl">Earned</div></div>`+
-   `<div><div class="gv">${money(owed)}</div><div class="gl">Unpaid balance</div></div>`+
-   `<div><div class="gv">${GIFT.stars?fmt(Math.round(GIFT.stars/Math.max(1,(IG.media||[]).length))):0}</div><div class="gl">Stars per post</div></div>`+
-  '</div>'+
-  '<div style="display:flex;justify-content:space-between;font-size:13px">'+
-   `<span>Toward the ${money(PAYOUT_MIN)} payout threshold</span>`+
-   `<span class="rv">${money(earned)} / ${money(PAYOUT_MIN)}</span></div>`+
-  `<div class="bar"><i style="width:${pct}%;background:${earned>=PAYOUT_MIN?'var(--mint)':'var(--amber)'}"></i></div>`+
-  `<div class="note" style="margin-top:5px">`+
-   (earned>=PAYOUT_MIN
-     ? 'Threshold cleared \u2014 Meta can disburse.'
-     : `${fmt(need)} more Stars to reach it.`)+
-   (GIFT.payout?'':' <strong>No payout account recorded</strong> \u2014 nothing is released without one.')+
-  '</div>';
-}
-function wireGifts(){
- const S=$('gStars'),P=$('gPaid'),C=$('gPayout');
- if(!S)return;
- S.value=GIFT.stars||''; P.value=GIFT.paid||''; C.checked=!!GIFT.payout;
- const upd=()=>{GIFT.stars=+S.value||0;GIFT.paid=+P.value||0;GIFT.payout=C.checked;
-   saveGift();renderGifts();render();};
- [S,P].forEach(el=>el.addEventListener('input',upd));
- C.addEventListener('change',upd);
-}
-
 // ---- compute ----
 function render(){
  const igt=IG.totalViews||0,ttt=ttTotal();const allViews=D.totalViews+igt+ttt;
@@ -953,14 +891,12 @@ function render(){
  // region and programme, and are not published. Inventing a number there would
  // be worse than showing none: it looks like data. What IS knowable is
  // followers, views, and which eligibility gates have been crossed.
- $('ract').textContent=money(GIFT.paid||0);
- renderGifts();
+ $('ract').textContent='$0.00';
  $('rfoll').textContent=fmt(D.followers||0);
  $('rigv').textContent=fmt(IG.totalViews||0);
  const gates=[
    {n:'Professional account', have:D.igPro?1:0, need:1, unit:'', what:'required for every Instagram monetisation feature'},
-   {n:'500 followers', have:D.followers||0, need:500, unit:'followers', what:'Gifts \u2014 the programme this account is in'},
-   {n:'Payout account', have:GIFT.payout?1:0, need:1, unit:'', what:'Meta releases nothing until this is set up, however many Stars you have'},
+   {n:'1,000 followers', have:D.followers||0, need:1000, unit:'followers', what:'entry-level creator features'},
    {n:'10,000 followers', have:D.followers||0, need:10000, unit:'followers', what:'Subscriptions and Live badges'},
  ];
  $('igGates').innerHTML=gates.map(g=>{
@@ -985,7 +921,7 @@ function render(){
    '(or 4,000 watch hours). Shown for reference \u2014 Instagram is where this account '+
    'actually reaches people, roughly 6x YouTube on the same videos.';
 }
-buildChanSel();applyScope();renderHeader();wireGifts();render();
+buildChanSel();applyScope();renderHeader();render();
 // chart Delta/Cumulative toggle + time range
 $('platSel').onchange=e=>{chartPlat=e.target.value;drawViewsChart()};
 $('dtPlat').onchange=e=>{dtPlat=e.target.value;renderDetail()};
