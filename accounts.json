@@ -19,7 +19,7 @@
   {
     "id": "carveteran",
     "name": "The Car Veteran",
-    "enabled": false,
+    "enabled": true,
     "handle": "@thecarveteran",
     "genres": [
       "revenge"
