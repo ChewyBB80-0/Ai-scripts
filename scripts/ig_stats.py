@@ -1,21 +1,29 @@
 """
 ig_stats.py
-Pulls live Instagram media + insights (views/reach/likes/comments) for the
-connected IG account and writes output/ig_stats.json for the dashboard.
-Read-only (instagram_basic). Runs on the hourly bot before gen_dashboard.py.
+Pulls live Instagram media + insights (views/reach/likes/comments) for EVERY
+account with IG credentials and writes each one's numbers to
+<out_dir>/ig_stats.json for the dashboard.
 
-Env: IG_ACCESS_TOKEN, IG_USER_ID (set via setx).
+ParkourFlux's out_dir is "output", so its file stays where it was and nothing
+reading output/ig_stats.json changes. A second channel lands in
+output/<id>/ig_stats.json.
+
+Read-only (instagram_basic). Runs on the hourly bot before gen_dashboard.py.
+Credentials come from the account, never from the bare env vars: those belong to
+ParkourFlux, and a fallback would silently report one channel's numbers under
+another channel's name.
 """
 
 import json
-import os
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 GRAPH = "https://graph.instagram.com"
-OUT = Path(__file__).parent.parent / "output" / "ig_stats.json"
 
 
 def _insights(mid: str, token: str) -> dict:
@@ -28,8 +36,7 @@ def _insights(mid: str, token: str) -> dict:
     return {}
 
 
-def fetch() -> dict:
-    token = os.environ["IG_ACCESS_TOKEN"]
+def fetch(token: str) -> dict:
     r = requests.get(f"{GRAPH}/me/media", params={
         "fields": "id,caption,media_type,permalink,timestamp",
         "access_token": token, "limit": 50})
@@ -56,9 +63,23 @@ def fetch() -> dict:
 
 
 if __name__ == "__main__":
-    try:
-        data = fetch()
-        OUT.write_text(json.dumps(data, indent=1))
-        print(f"IG stats -> {OUT}  ({data['totalViews']} views across {len(data['media'])} posts)")
-    except Exception as e:
-        print(f"IG stats fetch failed (non-fatal): {e}")
+    import config  # noqa: F401  -- loads .env
+    from accounts import all_accounts
+
+    ROOT = Path(__file__).resolve().parent.parent
+    for acc in all_accounts():
+        if not acc.ig_token:
+            print(f"[{acc.id}] no Instagram token -- skipped")
+            continue
+        try:
+            data = fetch(acc.ig_token)
+        except Exception as e:
+            # Never fatal: one account's expired token must not stop the others,
+            # and the dashboard simply shows that channel's last good numbers.
+            print(f"[{acc.id}] IG stats fetch failed (non-fatal): {e}")
+            continue
+        out = ROOT / acc.out_dir / "ig_stats.json"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(data, indent=1))
+        print(f"[{acc.id}] IG stats -> {out.relative_to(ROOT)}  "
+              f"({data['totalViews']} views across {len(data['media'])} posts)")

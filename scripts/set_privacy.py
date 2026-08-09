@@ -34,7 +34,24 @@ def _load(path: str):
     return creds if creds and creds.valid else None
 
 
-def get_service():
+def get_service(token_file: str | None = None):
+    """token_file: use THIS account's token instead of the main channel's.
+
+    Needed once there was more than one channel -- stats collection has to be
+    able to ask "which channel?" rather than always answering for ParkourFlux.
+    No interactive fallback in that case: a second channel's token is created by
+    add_channel.py, and silently opening a browser flow on a headless box would
+    hang the hourly run instead of just skipping an account.
+    """
+    if token_file:
+        if not Path(token_file).exists():
+            return None
+        try:
+            creds = _load(token_file)
+        except Exception:
+            creds = None
+        return build("youtube", "v3", credentials=creds) if creds else None
+
     creds = None
     # 1. the durable main token (has force-ssl); 2. the legacy manage token;
     # 3. only as a last resort, an interactive re-auth (won't work headless).
