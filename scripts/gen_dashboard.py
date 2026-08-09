@@ -296,6 +296,9 @@ select.range{background:var(--alt);border:1px solid var(--border);color:var(--te
 .cmpr{display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0}
 .cmpr span:last-child{font-variant-numeric:tabular-nums;font-weight:600}
 .cmpc .off{font-size:10px;color:var(--amber)}
+.gift{display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+.gift label{font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:4px}
+.gift input[type=number]{width:150px;padding:7px 9px;border:1px solid var(--border);border-radius:7px;background:var(--alt);color:var(--text);font-size:14px;font-variant-numeric:tabular-nums}
 </style></head><body>
 <div class="app">
  <aside class="side"><div class="brand">Channels</div>
@@ -414,8 +417,15 @@ select.range{background:var(--alt);border:1px solid var(--border);color:var(--te
   <section class="tab" data-t="revenue">
    <div class="tiles">
     <div class="tile"><div class="v" style="color:var(--mint)" id="ract">$0.00</div><div class="l">Actual revenue booked</div></div>
+    <div class="tile"><div class="v" id="rest">$0</div><div class="l">Est. value of reach</div></div>
+    <div class="tile"><div class="v" id="rmo">$0</div><div class="l">Est. /mo at current pace</div></div>
     <div class="tile"><div class="v" id="rfoll">0</div><div class="l">IG followers</div></div>
     <div class="tile"><div class="v" id="rigv">0</div><div class="l">IG views tracked</div></div></div>
+   <div class="card"><div class="ct">Estimate — your assumption, not a measurement</div>
+    <div class="gift">
+     <label>Assumed RPM ($ per 1,000 views) <input id="rRpm" type="number" min="0" step="0.01" placeholder="0.10"></label>
+    </div>
+    <div class="note" id="rNote"></div></div>
    <div class="card"><div class="ct">Instagram — the live path</div>
     <div id="igGates"></div>
     <div class="note" id="igNote"></div></div>
@@ -825,6 +835,48 @@ function multiLine(el,series){
    `<div style="font-size:11px;margin-top:6px;line-height:1.7">${key}</div>`;
 }
 
+// ---- revenue estimate ----
+// The RPM is an ASSUMPTION and is exposed as an input so it reads as one. A
+// rate hardcoded in the source renders identically to a measured number, which
+// is why the previous version of this tab was misleading: it applied YouTube's
+// $0.10/1k Shorts rate to a channel monetising on Instagram.
+//
+// It answers "what is this reach worth at a rate I choose", which is a real
+// planning question. It does NOT predict Gifts income: Stars are sent by
+// people, not earned per view, so a Reel can do well and pay nothing.
+const RPMK='pf_rpm';
+let RPM_ASSUMED=0.10;
+try{const v=parseFloat(localStorage.getItem(RPMK)); if(!isNaN(v))RPM_ASSUMED=v}catch(e){}
+function renderEstimate(){
+ const views=(IG.totalViews||0)+(D.totalViews||0);
+ const est=views/1000*RPM_ASSUMED;
+ // Pace comes from the snapshot history: views gained per day across the window
+ // we actually have, not lifetime/age -- a channel that started slowly would
+ // otherwise be judged on months when it was posting nothing.
+ let perDay=0, days=0;
+ const h=D.history||[];
+ if(h.length>1){
+  const a=h[0], b=h[h.length-1];
+  days=(new Date(b.t)-new Date(a.t))/86400000;
+  if(days>0.25){
+   const gain=seriesValue(b,'all')-seriesValue(a,'all');
+   perDay=Math.max(0,gain)/days;
+  }
+ }
+ const perMo=perDay*30/1000*RPM_ASSUMED;
+ $('rest').textContent=money(est);
+ $('rmo').textContent=money(perMo);
+ const r=$('rRpm'); if(r&&document.activeElement!==r)r.value=RPM_ASSUMED;
+ $('rNote').innerHTML=
+  `At <strong>${money(RPM_ASSUMED)}</strong> per 1,000 views, ${fmt(views)} views is `+
+  `<strong>${money(est)}</strong>. Pace is ${fmt(Math.round(perDay))} views/day measured over `+
+  (days>=1?`${days.toFixed(1)} days`:'less than a day')+` of snapshots, so `+
+  `${money(perMo)}/month at that rate.<br>`+
+  `This is what the reach would be worth <em>if</em> paid per view. Instagram Gifts is not `+
+  `paid per view \u2014 fans send Stars at $0.01 each, so actual income depends on how many `+
+  `choose to. Treat this as a ceiling for planning, not a forecast.`;
+}
+
 // ---- compute ----
 function render(){
  const igt=IG.totalViews||0,ttt=ttTotal();const allViews=D.totalViews+igt+ttt;
@@ -892,6 +944,7 @@ function render(){
  // be worse than showing none: it looks like data. What IS knowable is
  // followers, views, and which eligibility gates have been crossed.
  $('ract').textContent='$0.00';
+ renderEstimate();
  $('rfoll').textContent=fmt(D.followers||0);
  $('rigv').textContent=fmt(IG.totalViews||0);
  const gates=[
@@ -926,6 +979,7 @@ buildChanSel();applyScope();renderHeader();render();
 $('platSel').onchange=e=>{chartPlat=e.target.value;drawViewsChart()};
 $('dtPlat').onchange=e=>{dtPlat=e.target.value;renderDetail()};
 $('ageMetric').onchange=e=>{ageMetric=e.target.value;renderAge()};
+$('rRpm').addEventListener('input',e=>{const v=parseFloat(e.target.value); RPM_ASSUMED=isNaN(v)?0:v;try{localStorage.setItem(RPMK,RPM_ASSUMED)}catch(_){} renderEstimate();});
 $('tgCumul').onclick=()=>{chartMode='cumul';$('tgCumul').classList.add('on');$('tgDelta').classList.remove('on');drawViewsChart()};
 $('tgDelta').onclick=()=>{chartMode='delta';$('tgDelta').classList.add('on');$('tgCumul').classList.remove('on');drawViewsChart()};
 $('rangeSel').onchange=()=>{chartRange=+$('rangeSel').value;drawViewsChart()};
