@@ -61,6 +61,13 @@ def _write(data: dict) -> None:
     # because that would strand every account back on a stale .env token.
     tmp = STORE.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(data, indent=1), encoding="utf-8")
+    # Owner-only, matching .env. This file holds live access tokens and the
+    # default umask left it 664 -- readable by every account on the box.
+    # chmod BEFORE the rename so there is no window where it exists readable.
+    try:
+        os.chmod(tmp, 0o600)
+    except OSError:
+        pass                      # Windows ignores POSIX modes; not fatal
     tmp.replace(STORE)
 
 
