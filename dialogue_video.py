@@ -200,7 +200,12 @@ def build_audio(lines: list[Line], stem: str, out: Path | None = None) -> tuple[
     """Render every line in its speaker's voice, concatenate with a beat
     between them, and shift each line's word timings by where it actually
     starts -- otherwise captions would restart at zero on every line."""
-    OUT_ = out or OUT
+    # resolve(): the concat demuxer resolves the paths INSIDE its list file
+    # relative to that file's own directory, not the process CWD. A relative
+    # out dir therefore produced output/<acc>/output/<acc>/... , the concat
+    # failed, and because that call does not check its exit code the only
+    # symptom was a missing voice track much later.
+    OUT_ = Path(out).resolve() if out else OUT.resolve()
     OUT_.mkdir(parents=True, exist_ok=True)
     parts, all_words, offset = [], [], 0
 
@@ -244,9 +249,11 @@ def build_audio(lines: list[Line], stem: str, out: Path | None = None) -> tuple[
     listf = OUT_ / f"_{stem}_concat.txt"
     listf.write_text("".join(f"file '{p.as_posix()}'\n" for p in parts), encoding="utf-8")
     voice = OUT_ / f"{stem}.mp3"
-    subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0",
-                    "-i", str(listf), "-c:a", "libmp3lame", "-q:a", "2",
-                    str(voice)], capture_output=True)
+    r = subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0",
+                        "-i", str(listf), "-c:a", "libmp3lame", "-q:a", "2",
+                        str(voice)], capture_output=True, text=True)
+    if r.returncode != 0 or not voice.exists():
+        raise RuntimeError(f"voice concat failed: {r.stderr.strip()[-300:]}")
 
     for p in set(parts):
         p.unlink(missing_ok=True)
@@ -343,7 +350,7 @@ def render(script: dict, footage: list[Path], out: Path | None = None) -> Path:
     stem = re.sub(r"[^a-z0-9]+", "_", script["topic"].lower()).strip("_")[:40] or "episode"
     stem = f"car_{stem}"
 
-    OUT_ = Path(out) if out else OUT
+    OUT_ = Path(out).resolve() if out else OUT.resolve()
     OUT_.mkdir(parents=True, exist_ok=True)
     voice, words, spans = build_audio(lines, stem, OUT_)
     ass = OUT_ / f"{stem}_captions.ass"
