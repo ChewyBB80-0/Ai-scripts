@@ -158,15 +158,22 @@ def generate_story_via_claude(topic_hint: str = "", api_key: str | None = None,
     # niche filter (multi-account: each channel can restrict to its genres)
     pool = [g for g in all_genres if not genres or g[0] in genres] or all_genres
     genre_key, genre = random.choice(pool)
-    # Pick a concrete length target per story (weighted toward the short end) so
-    # durations actually vary across 30-60s instead of all clustering near 60s.
-    _target = random.choice([30, 30, 40, 40, 45, 50, 60])
+    # Length targets sit ABOVE 60 seconds on purpose: TikTok's Creator Rewards
+    # only pays on videos of 60s or more, and a 58-second video earns nothing
+    # there however well it does. The floor is 70 so that TTS variance -- the
+    # same script can render several seconds either side -- cannot drop a video
+    # under the bar.
+    #
+    # This is a real trade: Instagram is where this account actually gets views,
+    # and Reels retention favours shorter. Lengths still vary so the library does
+    # not become uniform, which is separately what YouTube's inauthentic-content
+    # policy penalises.
+    _target = random.choice([70, 70, 75, 80, 90])
     _target_spec = {
-        30: "about 30 seconds -- roughly 85 words across 4-5 short beats",
-        40: "about 40 seconds -- roughly 115 words across 5-6 beats",
-        45: "about 45 seconds -- roughly 130 words across 6-7 beats",
-        50: "about 50 seconds -- roughly 145 words across 7-8 beats",
-        60: "about 60 seconds -- roughly 165 words across 8-9 beats",
+        70: "about 70 seconds -- roughly 195 words across 9-10 beats",
+        75: "about 75 seconds -- roughly 210 words across 10-11 beats",
+        80: "about 80 seconds -- roughly 225 words across 11-12 beats",
+        90: "about 90 seconds -- roughly 250 words across 12-13 beats",
     }[_target]
     # Theme weighting: every breakout this channel has had is family (354),
     # HOA (252) or wedding (123) -- everything else sits at ~6-11 views. Biasing

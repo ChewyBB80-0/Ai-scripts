@@ -124,7 +124,12 @@ CHARACTERS (use these exact speaker tags):
 TOPIC: {subject}
 
 RULES:
-- 8 to 12 lines total, alternating, starting with ROOKIE or VET.
+- 16 to 20 lines total, alternating, starting with ROOKIE or VET. Aim for a
+  finished video of 70-90 seconds: TikTok pays only on videos of 60s or more,
+  and 8-12 lines came out around 52-56s, which earns nothing there. Do NOT pad
+  to reach the length -- add another genuine question the viewer would ask, or a
+  second concrete number. A stretched episode loses people faster than a short
+  one, and the extra length is worthless if nobody reaches it.
 - Each line is ONE or TWO short sentences. This is spoken aloud -- keep it tight.
 - Line 1 must be a HOOK: open a loop or state something surprising and specific
   in the first sentence. No throat-clearing, no greetings, no "hey guys".
