@@ -617,8 +617,7 @@ function dtRows(){
    url:'https://youtube.com/watch?v='+v.videoId,pending:pending});
  });
  (IG.media||[]).forEach(m=>{
-  rows.push({date:(m.timestamp||'').slice(0,10),title:(m.caption||'').split('
-')[0],
+  rows.push({date:(m.timestamp||'').slice(0,10),title:(m.caption||'').split(/\r?\n/)[0],
    ch:m.ch||'',plat:'Instagram',views:m.views||0,likes:m.likes||0,
    comments:m.comments||0,url:m.permalink||'',pending:false});
  });
