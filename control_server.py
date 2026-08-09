@@ -72,20 +72,63 @@ DESTS = {"footage": "footage", "music": "music",
 
 
 # ---------------- tools the assistant can call ----------------
-def t_get_stats(_):
-    yt = json.loads((ROOT / "output/channel_stats.json").read_text()) if (ROOT / "output/channel_stats.json").exists() else {}
-    ig = json.loads((ROOT / "output/ig_stats.json").read_text()) if (ROOT / "output/ig_stats.json").exists() else {}
+def _acc_stats(acc):
+    """One account's numbers, read from ITS OWN out_dir.
+
+    Every stats path here used to be output/channel_stats.json -- the first
+    channel's file. With a second channel live that silently answered "how are
+    we doing" for one of them and never mentioned the other, which is worse
+    than erroring: the number looks complete.
+    """
+    d = ROOT / acc.out_dir
+    yt = _read_json(d / "channel_stats.json", {})
+    ig = _read_json(d / "ig_stats.json", {"totalViews": 0, "media": []})
     yv = sorted(yt.get("videos", []), key=lambda v: v["views"], reverse=True)
-    iv = sorted(ig.get("media", []), key=lambda v: v["views"], reverse=True)
-    return json.dumps({
+    iv = sorted(ig.get("media", []), key=lambda v: v.get("views", 0), reverse=True)
+    return {
+        "channel": yt.get("channel") or acc.name,
+        "handle": acc.handle,
+        "enabled": acc.enabled,
+        "makes": acc.content_type,
         "youtube": {"subs": yt.get("subscribers", 0),
                     "total_views": sum(v["views"] for v in yv),
                     "videos": len(yv),
-                    "top": [{"title": v["title"], "views": v["views"], "likes": v["likes"]} for v in yv[:5]]},
+                    "top": [{"title": v["title"], "views": v["views"], "likes": v["likes"]}
+                            for v in yv[:5]]},
         "instagram": {"total_views": ig.get("totalViews", 0),
                       "posts": len(iv),
-                      "top": [{"caption": v["caption"], "views": v["views"]} for v in iv[:5]]},
-    })
+                      "top": [{"caption": v.get("caption", ""), "views": v.get("views", 0)}
+                              for v in iv[:5]]},
+    }
+
+
+def _read_json(p, default):
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return default
+
+
+def t_get_stats(inp):
+    from accounts import all_accounts
+    want = (inp or {}).get("account", "all")
+    accs = [a for a in all_accounts() if want in ("all", a.id)]
+    if not accs:
+        return (f"No account named {want!r}. Known: "
+                f"{', '.join(a.id for a in all_accounts())}")
+    per = {a.id: _acc_stats(a) for a in accs}
+    out = {"channels": per}
+    if len(per) > 1:
+        # A combined line as well as the split: "how are we doing overall" and
+        # "which channel is working" are different questions and the answer to
+        # one is misleading as an answer to the other.
+        out["combined"] = {
+            "youtube_views": sum(c["youtube"]["total_views"] for c in per.values()),
+            "instagram_views": sum(c["instagram"]["total_views"] for c in per.values()),
+            "videos": sum(c["youtube"]["videos"] for c in per.values()),
+            "ig_posts": sum(c["instagram"]["posts"] for c in per.values()),
+        }
+    return json.dumps(out)
 
 
 def t_post_video(inp):
@@ -93,19 +136,33 @@ def t_post_video(inp):
         return "A video is already being generated right now -- give it a couple minutes."
     _busy["posting"] = True
 
+    from accounts import get_account, load_accounts
+    acc_id = inp.get("account", "")
+    try:
+        acc = get_account(acc_id) if acc_id else load_accounts()[0]
+    except KeyError:
+        _busy["posting"] = False
+        return (f"No account named {acc_id!r}. Known: "
+                f"{', '.join(a.id for a in load_accounts())}")
+
     def run():
         try:
             import importlib, bot
             importlib.reload(bot)
+            # run_once dispatches on the account's content_type, so this makes a
+            # story for the story channel and a two-voice episode for the car
+            # channel -- the caller does not have to know which.
             bot.run_once(topic_hint=inp.get("topic", ""), force=True,
-                         platforms=inp.get("platform", "both"))
+                         account=acc, platforms=inp.get("platform", "both"))
         except Exception as e:
             print("post_video error:", e)
         finally:
             _busy["posting"] = False
     threading.Thread(target=run, daemon=True).start()
     hint = f" (topic: {inp['topic']})" if inp.get("topic") else ""
-    return f"Started generating and posting a fresh video{hint}. It'll be on YouTube + Instagram in a few minutes."
+    kind = "story" if acc.content_type == "story" else "episode"
+    return (f"Started generating and posting a fresh {kind} for {acc.name} "
+            f"({acc.handle}){hint}. It'll be live in a few minutes.")
 
 
 # The scheduler differs by OS: Task Scheduler on Windows, a systemd timer on
@@ -196,10 +253,10 @@ def t_recent(_):
 
 
 TOOLS = [
-    {"name": "get_stats", "description": "Current YouTube + Instagram performance: views, subs, top videos.",
-     "input_schema": {"type": "object", "properties": {}}},
-    {"name": "post_video", "description": "Generate and post a NEW story video right now. Choose the platform: 'both' (default), 'youtube', or 'instagram'. Optional topic hint. If the user asks to post but doesn't say where, ask which platform(s) first.",
-     "input_schema": {"type": "object", "properties": {"topic": {"type": "string", "description": "optional topic/theme"}, "platform": {"type": "string", "enum": ["both", "youtube", "instagram"], "description": "which platform(s) to post to (default both)"}}}},
+    {"name": "get_stats", "description": "Current YouTube + Instagram performance: views, subs, top videos. Covers EVERY channel by default and returns a per-channel breakdown plus a combined total -- pass account to narrow to one. Always say which channel a number belongs to; the two channels post different content to different audiences and a merged figure hides which one is working.",
+     "input_schema": {"type": "object", "properties": {"account": {"type": "string", "description": "account id (parkourflux, carveteran) or 'all' for every channel (default)"}}}},
+    {"name": "post_video", "description": "Generate and post a NEW video right now on a given channel -- a Reddit-style story for parkourflux, a two-voice car episode for carveteran; the pipeline picks the right one from the account. Choose the platform: 'both' (default), 'youtube', or 'instagram'. Optional topic hint. If the user asks to post but doesn't say where, ask which platform(s) first.",
+     "input_schema": {"type": "object", "properties": {"topic": {"type": "string", "description": "optional topic/theme"}, "platform": {"type": "string", "enum": ["both", "youtube", "instagram"], "description": "which platform(s) to post to (default both)"}, "account": {"type": "string", "description": "which channel: parkourflux (Reddit-style stories) or carveteran (two-voice car tips). Defaults to parkourflux. ASK if the user has not said which -- posting a story to the car channel is the wrong content on the wrong audience."}}}},
     {"name": "update", "description": "Deploy the latest pushed code to this machine (git pull, fast-forward only). Use when the user says update/deploy/pull/'get the fix', or when a bug has been fixed remotely and needs to reach the box. Safe: it never discards local work, and reports if a restart is still needed.",
      "input_schema": {"type": "object", "properties": {}}},
     {"name": "set_autonomy", "description": "Turn autonomous posting (every 2 hours) on or off.",
@@ -421,11 +478,21 @@ SYSTEM = (
     "- SECOND MANUAL POST 2026-08-09: 'The Finance Office Trick That Costs You $2,500' "
     "(youtube Gw9-IWWO8pk + Reel). Two data points now; the owner is watching before "
     "automating.\n"
-    "- TO SWITCH AUTOMATION ON, when the owner asks: set carveteran's `enabled` to true "
-    "in accounts.json. That is the whole change -- the hourly run_all.py -> bot.py then "
-    "includes it and posts daily_target (1) per day. Verify first with "
-    "`bot.py --account carveteran --dry-render`, which renders without posting. "
-    "Do NOT flip it on your own initiative.\n"
+    "- ** AUTOPOSTER IS ON for carveteran as of 2026-08-09. ** `enabled: true`, so the "
+    "hourly run posts ONE car episode a day alongside ParkourFlux's two. To pause it, "
+    "set enabled back to false -- do not touch it unless the owner asks.\n"
+    "- YOUR TOOLS ARE PER-CHANNEL. get_stats covers EVERY channel by default and returns "
+    "a per-channel breakdown plus a combined total; pass account to narrow to one. "
+    "post_video takes account too, and the pipeline picks the right format from it. "
+    "ALWAYS say which channel a number belongs to -- the two post different content to "
+    "different audiences, so a merged figure hides which one is working. If the owner "
+    "asks to post and has not said which channel, ASK: a Reddit story on the car channel "
+    "is the wrong content in front of the wrong audience.\n"
+    "- Footage now lives per channel: footage/parkourflux/{bright_biomes,night_1080,"
+    "orbital_day} and footage/carveteran/{gameplay,road} -- 15 GTA clips the owner "
+    "recorded plus 30 licence-clean Pexels road clips (scripts/fetch_footage.py, needs "
+    "PEXELS_API_KEY). Each video commits to ONE set, so gameplay and dashcam alternate "
+    "between episodes rather than cutting mid-episode.\n"
     "- EPISODE 5 IS THE RENDER BASELINE for this channel: characters carry drop shadows "
     "(scripts/make_faces.py regenerates them from the expression grids), background clips "
     "hold 8-13s so the footage does not appear to cut on every speaker change, Rusty +5% / "
@@ -629,23 +696,43 @@ def _fast_reply(text: str):
     if has("stats", "report", "how are we doing", "how we doing", "numbers",
            "how's it going", "hows it going", "views", "subs", "subscribers"):
         try:
-            yt = json.loads((ROOT / "output/channel_stats.json").read_text())
-            ig = json.loads((ROOT / "output/ig_stats.json").read_text())
-            vids = yt.get("videos", [])
-            live = [v for v in vids if not v.get("publishAt")]
-            sched = len(vids) - len(live)
-            ytv = sum(v["views"] for v in live)
-            top = max(live + [{"views": 0, "title": "-"}], key=lambda v: v["views"])
-            igv = ig.get("totalViews", 0)
-            sync = yt.get("fetchedAt", "?")[:16].replace("T", " ")
-            return (
-                "📊 **ParkourFlux stats**\n"
-                f"┃ **YouTube** — {ytv:,} views · {yt.get('subscribers',0)} subs\n"
-                f"┃ {len(live)} live" + (f" · {sched} scheduled" if sched else "") + "\n"
-                f"┃ **Instagram** — {igv:,} views · {len(ig.get('media',[]))} posts\n"
-                f"┃ **Combined** — {ytv+igv:,} views\n"
-                f"🏆 Top: {top['title'][:50]} — {top['views']:,} views\n"
-                f"_synced {sync}_")
+            from accounts import all_accounts
+            # One block per channel, then a combined line. This used to read the
+            # first channel's files and title itself "ParkourFlux stats", so once
+            # a second channel went live the answer was quietly half the picture.
+            blocks, tot_yt, tot_ig, sync = [], 0, 0, ""
+            for acc in all_accounts():
+                d = ROOT / acc.out_dir
+                yt = _read_json(d / "channel_stats.json", None)
+                ig = _read_json(d / "ig_stats.json", {"totalViews": 0, "media": []})
+                if yt is None and not ig.get("media"):
+                    continue                      # nothing collected yet
+                yt = yt or {"videos": [], "subscribers": 0}
+                vids = yt.get("videos", [])
+                live = [v for v in vids if not v.get("publishAt")]
+                sched = len(vids) - len(live)
+                ytv = sum(v["views"] for v in live)
+                igv = ig.get("totalViews", 0)
+                tot_yt += ytv
+                tot_ig += igv
+                sync = max(sync, (yt.get("fetchedAt") or "")[:16].replace("T", " "))
+                cands = live + [{"views": v.get("views", 0),
+                                 "title": (v.get("caption") or "")[:50]}
+                                for v in ig.get("media", [])]
+                top = max(cands + [{"views": 0, "title": "-"}],
+                          key=lambda v: v.get("views", 0))
+                off = "" if acc.enabled else "  _(autoposter off)_"
+                blocks.append(
+                    f"**{yt.get('channel') or acc.name}** {acc.handle}{off}\n"
+                    f"┃ YT — {ytv:,} views · {yt.get('subscribers',0)} subs · "
+                    f"{len(live)} live" + (f" · {sched} scheduled" if sched else "") + "\n"
+                    f"┃ IG — {igv:,} views · {len(ig.get('media',[]))} posts\n"
+                    f"┃ 🏆 {str(top.get('title') or '-')[:46]} — {top.get('views',0):,}")
+            if not blocks:
+                raise ValueError("no stats collected yet")
+            combined = (f"\n**All channels** — {tot_yt+tot_ig:,} views "
+                        f"({tot_yt:,} YT · {tot_ig:,} IG)" if len(blocks) > 1 else "")
+            return "📊 **Stats**\n" + "\n".join(blocks) + combined + f"\n_synced {sync}_"
         except Exception:
             return None
 
