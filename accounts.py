@@ -136,35 +136,58 @@ def get_account(acc_id: str) -> Account:
     raise KeyError(f"no account '{acc_id}' in accounts.json")
 
 
-def resolve_footage(acc: Account) -> list[Path]:
-    """Background clips this account should draw from, most-specific first:
+def footage_root(acc: Account) -> Path:
+    """The ONE folder this account draws from. Nothing outside it is reachable.
 
-      1. footage/<id>/     -- a folder you curate for THIS account. If it has
-                              clips, they are used exclusively (full control:
-                              give each channel its own look).
-      2. acc.footage_dir   -- honored when the account set a custom dir.
-      3. shared footage/    -- the common pool, AUTO-PARTITIONED so each account
-                              gets a distinct slice. So even if you just dump
-                              every clip into footage/, two accounts won't render
-                              over the same backgrounds (near-duplicate videos
-                              across your own channels tank reach). Partitioning
-                              only kicks in when the pool is big enough (>= 2x the
-                              account count) to still give each account variety;
-                              otherwise everyone shares the whole pool.
+    This is the whole of the channel-separation story, in one place. It used to
+    be spread across resolve_footage, background_variants and a _has_own_footage
+    guard in pick_background_set, each re-deriving the rule slightly differently
+    -- which is how the car channel's clips ended up in the story channel's
+    rotation when a folder was renamed.
+
+    Most specific first:
+      1. footage/<id>/     -- this account's own tree. Give every channel one and
+                              the shared pool stops being reachable by anybody,
+                              which turns cross-channel leakage from opt-OUT (any
+                              new folder joins every channel's rotation until
+                              something excludes it) into opt-IN.
+      2. acc.footage_dir   -- an explicit custom dir.
+      3. footage/          -- the shared pool. Only reached by accounts that have
+                              neither of the above.
+    """
+    own = ROOT / "footage" / acc.id
+    if own.is_dir():
+        return own
+    if acc.footage_dir:
+        custom = ROOT / acc.footage_dir
+        if custom.is_dir():
+            return custom
+    return ROOT / "footage"
+
+
+def resolve_footage(acc: Account) -> list[Path]:
+    """Every clip this account may use, flat.
+
+    Clips loose in its root, else everything across its themed subfolders. Only
+    an account still on the shared pool falls through to the partitioning below,
+    which hands each account a distinct slice so two channels don't render over
+    the same backgrounds (near-duplicate videos across your own channels tank
+    reach). Partitioning needs a pool of at least 2x the account count, so each
+    account still gets some variety; below that everyone shares the whole pool.
 
     The assembler already cuts a fresh random montage per video, so within an
     account each new story/series is visually different for free. Returns [] when
     no clips are found (the caller skips the run).
     """
-    dedicated = ROOT / "footage" / acc.id
-    if dedicated.is_dir():
-        clips = sorted(dedicated.glob("*.mp4"))
-        if clips:
-            return clips
-    if acc.footage_dir != "footage":
-        clips = sorted((ROOT / acc.footage_dir).glob("*.mp4"))
-        if clips:
-            return clips
+    root = footage_root(acc)
+    clips = sorted(root.glob("*.mp4"))
+    if clips:
+        return clips
+    variants = background_variants(acc)
+    if variants:
+        return sorted(c for d in variants for c in d.glob("*.mp4"))
+    if root.resolve() != (ROOT / "footage").resolve():
+        return []                       # its own tree is empty; do NOT fall back
     pool = sorted((ROOT / "footage").glob("*.mp4"))
     if not pool:
         return []
@@ -215,16 +238,20 @@ def background_variants(acc: Account) -> list[Path]:
     is what you want; a montage that cuts between two different worlds
     mid-story reads as a mistake.
 
-    Excluded: another account's footage_dir, anything named for an account, and
-    anything starting with "_" -- the underscore marks a folder that is staged
-    or quarantined rather than ready to publish. footage/_unusable/ holds a clip
+    Sets live inside the account's own footage_root, so an account with its own
+    tree cannot see anything outside it and needs no exclusions at all. The
+    exclusions below therefore only apply to an account still sharing footage/:
+    another account's footage_dir, anything named for an account, and anything
+    starting with "_" -- the underscore marks a folder that is staged or
+    quarantined rather than ready to publish. footage/_unusable/ holds a clip
     with a Twitch logo burned into it, and without that rule it was in the draw.
     """
-    root = ROOT / "footage"
+    root = footage_root(acc)
     if not root.is_dir():
         return []
-    ids = {a.id for a in all_accounts()}
-    blocked = _NOT_A_VARIANT | _foreign_footage_dirs(acc) | ids
+    shared = root.resolve() == (ROOT / "footage").resolve()
+    blocked = (_NOT_A_VARIANT | _foreign_footage_dirs(acc)
+               | {a.id for a in all_accounts()}) if shared else set()
     out = []
     for d in sorted(root.iterdir()):
         if (d.is_dir() and not d.name.startswith("_") and d.name not in blocked
@@ -249,24 +276,14 @@ def pick_background_set(acc: Account, genre: str | None = None, rng=None,
     are no themed folders. Call once per video."""
     import random as _r
     rng = rng or _r
+    # background_variants is already scoped to this account's footage_root, so
+    # there is nothing to re-check here. There used to be a _has_own_footage
+    # guard duplicating that decision, and the duplicate disagreed with
+    # resolve_footage: it only looked at footage/<id>/ and ignored a custom
+    # footage_dir, so the car channel was handed the parkour channel's Minecraft
+    # sets. One source of truth means the two cannot drift apart again.
     variants = background_variants(acc)
-    # A dedicated footage folder wins outright -- EITHER the footage/<account_id>
-    # convention, OR an explicit custom footage_dir.
-    #
-    # The custom-dir half was missing, and it silently broke channel separation:
-    # carveteran sets footage_dir="footage/driving", there is no footage/carveteran/,
-    # so the guard passed and it was handed the shared themed sets. The car
-    # channel would have posted the parkour channel's Minecraft clips. Nothing
-    # errored -- resolve_footage honoured the setting and pick_background_set,
-    # which is what bot.py actually calls, quietly did not.
-    _own = ROOT / "footage" / acc.id
-    _custom = (ROOT / acc.footage_dir) if acc.footage_dir else None
-    _has_own_footage = _own.is_dir() or (
-        _custom is not None
-        and _custom.resolve() != (ROOT / "footage").resolve()
-        and _custom.is_dir()
-        and any(_custom.glob("*.mp4")))
-    if variants and not _has_own_footage:
+    if variants:
         preferred = [d for d in variants
                      for key, genres in _GENRE_SETS.items()
                      if key in d.name.lower() and genre in genres]
