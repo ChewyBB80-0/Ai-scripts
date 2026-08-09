@@ -300,16 +300,16 @@ select.range{background:var(--alt);border:1px solid var(--border);color:var(--te
     <div class="tile"><div class="v" id="ttv">0</div><div class="l">TikTok views (manual)</div></div>
     <div class="tile"><div class="v" id="ttcnt">0</div><div class="l">Posts tracked</div></div></div>
    <div class="note" id="ttScopeNote" style="margin-bottom:12px"></div>
-   <div class="card"><div class="ct">Connection status</div>
+   <div class="card" id="ttConnCard"><div class="ct">Connection status</div>
     <div class="feat"><div><div><span class="pill">Connected · draft mode</span></div>
      <div class="note" style="margin-top:8px">Authorized 22 Jul 2026 — the pipeline can push any rendered video
      straight to your TikTok drafts (ask the bot: <em>“push the last 2 videos to TikTok”</em>, or run
      <code>tiktok_upload.py post-latest</code>). Uploads land in the TikTok app under Inbox/drafts and
      <strong>you tap Post</strong> — TikTok's sandbox doesn't allow fully public auto-posting until the app
      passes their production audit, so TikTok sits outside the automatic 2-a-day cadence for now.</div></div></div></div>
-   <div class="card"><div class="ct">Pushed to TikTok</div>
+   <div class="card" id="ttPushedCard"><div class="ct">Pushed to TikTok</div>
     <div id="ttPushed"></div></div>
-   <div class="card"><div class="ct">Manual view tracking — type each TikTok's views (saved in this browser)</div>
+   <div class="card" id="ttManualCard"><div class="ct">Manual view tracking — type each TikTok's views (saved in this browser)</div>
     <div id="ttList"></div>
     <div class="note">No auto stats feed yet (that needs the production audit too). Enter numbers from the app; they feed the "all platforms" totals.</div></div>
   </section>
@@ -394,6 +394,10 @@ function applyScope(){
  const tn=$('ttScopeNote');
  if(tn)tn.textContent=D.ttConnected?'':'TikTok is not connected for this channel — only '+
    (ACCS.find(a=>a.ttConnected)||{name:'the main channel'}).name+' is authorised.';
+ // Hide the "Connected · draft mode" card when this channel is NOT connected,
+ // or the panel states both things at once and the note reads as the wrong one.
+ ['ttConnCard','ttPushedCard','ttManualCard'].forEach(id=>{
+  const el=$(id);if(el)el.style.display=D.ttConnected?'':'none';});
 }
 const TTK='pf_tt_views';let tt={};try{tt=JSON.parse(localStorage.getItem(TTK)||'{}')}catch(e){}
 function ttTotal(){return Object.values(tt).reduce((a,b)=>a+(+b||0),0)}
