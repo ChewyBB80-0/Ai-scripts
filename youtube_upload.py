@@ -20,7 +20,6 @@ Usage:
                   tags=["shorts", "story", "minecraft"])
 """
 
-import os
 from pathlib import Path
 
 from google.auth.transport.requests import Request

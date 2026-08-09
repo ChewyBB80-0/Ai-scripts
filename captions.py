@@ -4,7 +4,6 @@ Builds the punchy, word-by-word (or 2-3 word) burn-in captions typical of
 this format, as an .ass subtitle file ffmpeg can hard-burn onto the video.
 """
 
-import json
 from pathlib import Path
 
 ASS_HEADER = """[Script Info]

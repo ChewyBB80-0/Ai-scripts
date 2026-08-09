@@ -10,7 +10,6 @@ time by social_caption.ai_caption). Costs pennies per refresh.
 """
 
 import json
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 

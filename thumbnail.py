@@ -38,60 +38,6 @@ THEME_COLORS = {
 }
 
 
-PHRASE_CACHE = ROOT / "output" / "thumb_phrases.json"
-
-
-def hook_phrase(title: str, api_key: str | None = None) -> str:
-    """A short, punchy thumbnail line written for the title.
-
-    Mechanically truncating a long title cuts mid-thought ("...fined me $500
-    for 'excessive") which reads as broken rather than as a teaser. Asking for
-    a purpose-written phrase costs a fraction of a cent and is cached per title,
-    so it's paid once. Falls back to a plain truncation on any failure -- a
-    thumbnail must never block a post.
-    """
-    import json as _j
-    try:
-        cache = _j.loads(PHRASE_CACHE.read_text(encoding="utf-8"))
-    except Exception:
-        cache = {}
-    if title in cache:
-        return cache[title]
-
-    try:
-        import anthropic
-        import os as _os
-        r = anthropic.Anthropic(
-            api_key=api_key or _os.environ.get("ANTHROPIC_API_KEY")
-        ).messages.create(
-            model="claude-sonnet-5", max_tokens=60, thinking={"type": "disabled"},
-            messages=[{"role": "user", "content": f"""Write a YouTube thumbnail phrase for this video.
-
-Title: {title}
-
-Rules:
-- 3 to 6 words, MAX 7. It must be readable when the image is 200px wide.
-- Capture the most shocking or intriguing single element -- the thing that makes
-  someone stop scrolling. Not a summary.
-- Never end mid-thought or on a connecting word (the, to, for, my, over...).
-- Keep any specific number or dollar amount if there is one -- specifics sell.
-- No quotes, no emoji, no hashtags, no ending punctuation.
-- Reply with ONLY the phrase."""}],
-        )
-        phrase = next(b.text for b in r.content if b.type == "text").strip()
-        phrase = phrase.strip('"“” ').rstrip(".!,")
-        if not (2 <= len(phrase.split()) <= 8):
-            raise ValueError(f"bad length: {phrase!r}")
-        cache[title] = phrase
-        PHRASE_CACHE.parent.mkdir(parents=True, exist_ok=True)
-        PHRASE_CACHE.write_text(_j.dumps(cache, indent=1), encoding="utf-8")
-        return phrase
-    except Exception as e:
-        print(f"  (thumbnail phrase fell back to truncation: {e})")
-        words = title.split()
-        return " ".join(words[:7])
-
-
 def _wrap(draw, text: str, font, max_w: int) -> list[str]:
     words, lines, cur = text.split(), [], []
     for w in words:

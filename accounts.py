@@ -13,7 +13,7 @@ cross-posts. The bot picks it up on the next hourly run.
 
 import json
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).parent
