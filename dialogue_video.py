@@ -46,8 +46,12 @@ OUT = ROOT / "output" / "car_channel"
 # +/-25Hz. They still blurred together -- a shared timbre survives pitch
 # shifting. Changing the ACCENT is the lever that actually works: you can tell
 # them apart inside one word.
+# Rusty's rate was -8%, which dragged: the slower the delivery, the longer every
+# comma and full stop is held, and his lines carry the most punctuation. The
+# accent split and the -18Hz do the "older, heavier" work on their own, so the
+# rate no longer has to.
 VET = {"name": "Rusty", "voice": "en-US-ChristopherNeural",
-       "rate": "-8%", "pitch": "-18Hz", "side": "left",
+       "rate": "-3%", "pitch": "-18Hz", "side": "left",
        "faces": ["deadpan", "smug", "eyeroll", "explaining"],
        "default_face": "deadpan"}
 ROOKIE = {"name": "Sparky", "voice": "en-GB-RyanNeural",
@@ -113,6 +117,12 @@ RULES:
   saved or baits a comment (e.g. "How many of you are guilty of this?").
 - Keep it PG. Dry humour, not insults.
 - Correct grammar and punctuation -- this is displayed on screen as captions.
+- Write for the ear. Every full stop and comma becomes a real pause when this is
+  spoken, so a line stacked out of short clipped fragments ("Normal for them. A
+  quick shop does it. For forty.") comes out choppy. Prefer one sentence that
+  runs, and when a line needs two, make the FIRST one the short one so the line
+  opens and then flows instead of stopping halfway. This matters most for VET,
+  who speaks more slowly.
 
 EXPRESSIONS -- every line also carries the face that character pulls while
 saying it. This is what makes the characters feel alive, so pick the one that
@@ -173,15 +183,31 @@ def build_audio(lines: list[Line], stem: str) -> tuple[Path, list[dict]]:
     starts -- otherwise captions would restart at zero on every line."""
     OUT.mkdir(parents=True, exist_ok=True)
     parts, all_words, offset = [], [], 0
-    silence = OUT / "_gap.mp3"
+
+    # Everything is joined as WAV, not MP3. Concatenating MP3s with -c copy
+    # carries each file's encoder delay and padding into the join: with a line
+    # and a gap per turn that is ~20 seams, each adding a few tens of ms of dead
+    # air the decoder was supposed to trim. It reads as a stutter between words,
+    # and it also drifts the real timeline away from the per-file durations that
+    # the captions and the faces are positioned from, so the further into an
+    # episode you get the further the mouth is from the words.
+    #
+    # WAV has no such framing, so the concat is sample-exact and _duration_ms is
+    # the truth. One encode at the very end is then the only lossy step.
+    silence = OUT / "_gap.wav"
     subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i",
                     "anullsrc=r=24000:cl=mono", "-t", f"{GAP_MS/1000}",
-                    "-q:a", "9", str(silence)], capture_output=True)
+                    "-c:a", "pcm_s16le", str(silence)], capture_output=True)
 
     spans = []          # (speaker, emotion, start_ms, end_ms) -- drives the faces
     for i, ln in enumerate(lines):
-        p = OUT / f"_{stem}_{i:02d}.mp3"
-        words = asyncio.run(_speak(ln.text, SPEAKERS[ln.speaker], p))
+        mp3 = OUT / f"_{stem}_{i:02d}.mp3"
+        words = asyncio.run(_speak(ln.text, SPEAKERS[ln.speaker], mp3))
+        p = OUT / f"_{stem}_{i:02d}.wav"
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(mp3),
+                        "-ar", "24000", "-ac", "1", "-c:a", "pcm_s16le",
+                        str(p)], capture_output=True)
+        mp3.unlink(missing_ok=True)
         for w in words:
             all_words.append({"word": w["word"],
                               "start_ms": w["start_ms"] + offset,
@@ -199,7 +225,8 @@ def build_audio(lines: list[Line], stem: str) -> tuple[Path, list[dict]]:
     listf.write_text("".join(f"file '{p.as_posix()}'\n" for p in parts), encoding="utf-8")
     voice = OUT / f"{stem}.mp3"
     subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0",
-                    "-i", str(listf), "-c", "copy", str(voice)], capture_output=True)
+                    "-i", str(listf), "-c:a", "libmp3lame", "-q:a", "2",
+                    str(voice)], capture_output=True)
 
     for p in set(parts):
         p.unlink(missing_ok=True)
