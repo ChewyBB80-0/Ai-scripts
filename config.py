@@ -6,6 +6,26 @@ you trust the output quality and posting cadence.
 
 import os
 
+# Load .env here, once, for everything.
+#
+# systemd hands .env to the services via EnvironmentFile=, so the timers were
+# always fine -- but any script run BY HAND got an empty environment, and that
+# has now bitten five separate entry points: preflight reported healthy
+# credentials as MISSING, tiktok_upload died on a bare KeyError, health_check
+# alarmed about a perfectly good Instagram token, ig_stats.py failed to fetch,
+# and dialogue_video.py could not reach the Anthropic API. Each was patched
+# individually; this stops the sixth.
+#
+# config is imported by 14 modules including every entry point, which makes it
+# the one place that covers all of them. env_file.load() only fills variables
+# that are UNSET, so it can never override what systemd already supplied, and
+# it is silent and non-fatal when .env is absent.
+try:
+    import env_file
+    env_file.load()
+except Exception:
+    pass
+
 # Render profile. On a weak machine (the Atom-based stick PC), set the env var
 # MEDIA_MAKER_LOW_SPEC=1 to drop to 720x1280 + a lighter encode so renders
 # finish in a reasonable time and files stay small (helps the 64GB eMMC). The

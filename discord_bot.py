@@ -21,7 +21,11 @@ import tiktok_queue
 
 OWNER = int(os.environ["DISCORD_USER_ID"])
 CHAT_URL = "http://127.0.0.1:8000/api/chat"
-DISCORD_ATTACH_LIMIT = 9_000_000     # free-tier upload ceiling, with headroom
+# Free-tier upload ceiling, with headroom. Raising this to 24MB on the theory
+# that Discord now allows 25MB was tried on 2026-08-08 and the API returned
+# 413 Payload Too Large for a 22.5MB file -- the effective limit for this
+# bot/channel is lower than the documented user limit. Left where it was.
+DISCORD_ATTACH_LIMIT = 9_000_000
 
 # Single-instance guard: if a second copy is launched (e.g. Startup entry AND a
 # manual double-click), it exits immediately instead of connecting a second bot

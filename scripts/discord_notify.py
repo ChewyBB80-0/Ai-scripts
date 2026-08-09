@@ -17,6 +17,18 @@ import requests
 ROOT = Path(__file__).parent.parent
 API = "https://discord.com/api/v10"
 
+# Load .env if nothing else has. config.py does this for the 14 modules that
+# import it, but this one deliberately does not import config -- it is the
+# notifier, and it must keep working even when config is unimportable. So it
+# loads its own. Without it a hand-run send dies on KeyError DISCORD_BOT_TOKEN
+# while the systemd timer, which gets EnvironmentFile, works fine.
+sys.path.insert(0, str(ROOT))
+try:
+    import env_file
+    env_file.load()
+except Exception:
+    pass
+
 
 def _dm_channel(token: str, user_id: str) -> str:
     r = requests.post(f"{API}/users/@me/channels",

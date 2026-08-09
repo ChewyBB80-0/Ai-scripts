@@ -8,7 +8,11 @@ scripts/start_server.bat
 scripts/start_control.bat
 scripts/start_bot.bat
 scripts/run_daily.bat
-token*.json
+# Any OAuth token file, whatever the suffix. `token*.json` missed
+# token.json.holding -- a real credential (token + refresh_token +
+# client_secret) that sat untracked-but-not-ignored, one `git add -A` from
+# being committed.
+token*.json*
 client_secret*.json
 tiktok_token.json
 
