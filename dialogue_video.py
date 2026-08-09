@@ -365,7 +365,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--topic", default="")
     ap.add_argument("--episode", type=int, default=1)
-    ap.add_argument("--footage", default="footage/gta")
+    ap.add_argument("--footage", default="footage/driving")
     args = ap.parse_args()
 
     ensure_ffmpeg()

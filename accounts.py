@@ -209,7 +209,7 @@ def pick_background_set(acc: Account, genre: str | None = None, rng=None,
     # convention, OR an explicit custom footage_dir.
     #
     # The custom-dir half was missing, and it silently broke channel separation:
-    # carveteran sets footage_dir="footage/gta", there is no footage/carveteran/,
+    # carveteran sets footage_dir="footage/driving", there is no footage/carveteran/,
     # so the guard passed and it was handed the shared themed sets. The car
     # channel would have posted the parkour channel's Minecraft clips. Nothing
     # errored -- resolve_footage honoured the setting and pick_background_set,
