@@ -30,13 +30,25 @@ def _ms_to_ass_time(ms: int) -> str:
     return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
 
 
-def build_caption_file(word_timings: list[dict], out_path: str | Path, words_per_group: int = 2):
+def build_caption_file(word_timings: list[dict], out_path: str | Path,
+                       words_per_group: int = 2, centre: bool = False):
     """
     word_timings: list of {"word": str, "start_ms": int, "end_ms": int}
     Groups words (default 2 at a time) into caption events, all-caps,
     which is the standard style for this format.
+
+    centre: put the text in the vertical middle of the frame instead of the
+    default lower third. Opt-in, and off by default ON PURPOSE -- the story
+    channel's caption position is part of a live retention measurement, and
+    moving it would make that number uninterpretable. The dialogue channel wants
+    the middle because its characters occupy the bottom corners.
     """
-    lines = [ASS_HEADER]
+    header = ASS_HEADER
+    if centre:
+        # ASS alignment is numpad-style: 2 = bottom-centre, 5 = middle-centre.
+        # MarginV stops applying once the text is middle-anchored, so zero it.
+        header = header.replace(",1,7,0,2,80,80,650", ",1,7,0,5,80,80,0")
+    lines = [header]
     for i in range(0, len(word_timings), words_per_group):
         group = word_timings[i:i + words_per_group]
         text = " ".join(w["word"] for w in group).upper()

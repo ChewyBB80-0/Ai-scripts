@@ -47,7 +47,7 @@ OUT = ROOT / "output" / "car_channel"
 # shifting. Changing the ACCENT is the lever that actually works: you can tell
 # them apart inside one word.
 VET = {"name": "Rusty", "voice": "en-US-ChristopherNeural",
-       "rate": "-10%", "pitch": "-40Hz", "side": "left",
+       "rate": "-8%", "pitch": "-18Hz", "side": "left",
        "faces": ["deadpan", "smug", "eyeroll", "explaining"],
        "default_face": "deadpan"}
 ROOKIE = {"name": "Sparky", "voice": "en-GB-RyanNeural",
@@ -58,9 +58,13 @@ SPEAKERS = {"VET": VET, "ROOKIE": ROOKIE}
 
 # Character art: branding/carveteran/faces/<name>_<emotion>.png, transparent.
 FACE_DIR = ROOT / "branding" / "carveteran" / "faces"
-# Fraction of frame width the character occupies. Big enough to read the
-# expression on a phone, small enough to leave the captions alone.
-FACE_SCALE = 0.42
+# Fraction of frame width the character occupies. 0.42 read as small and
+# pasted-on at phone size; 0.60 makes them feel like they are in the scene.
+# Captions moved to the vertical middle to make room.
+FACE_SCALE = 0.60
+SLIDE_S = 0.22        # how long a character takes to slide in when their turn starts
+MARGIN = 30           # gap from the frame edge
+BOTTOM_PAD = 160      # gap from the bottom; captions now sit centred, above this
 
 GAP_MS = 180          # beat between lines so it reads as a conversation
 
@@ -232,21 +236,43 @@ def overlay_faces(video: Path, spans: list, out: Path) -> Path:
     for k in paths:
         cmd += ["-i", str(paths[k])]
 
-    # Scale each face once, then overlay it during each of its time ranges.
+    # Scale each face once, then split it into one copy per line that uses it --
+    # an ffmpeg filter output can only be consumed once, and every line needs its
+    # own overlay so it can animate independently.
+    #
     # Sized off config.RENDER_WIDTH rather than main_w: scale cannot reference
-    # the main input's dimensions, and this keeps it correct on the low-spec
+    # the main input's dimensions, and this stays correct on the low-spec
     # 720-wide profile as well as 1080.
     fw = int(config.RENDER_WIDTH * FACE_SCALE)
-    fc = [f"[{i}:v]scale={fw}:-1[f{i}]" for i in idx.values()]
-    last, n = "0:v", 0
-    for (sp, face), i in idx.items():
-        ranges = [(a, b) for s, f, a, b in spans if s == sp and f == face]
-        enable = "+".join(f"between(t,{a/1000:.2f},{b/1000:.2f})" for a, b in ranges)
-        x = "40" if SPEAKERS[sp]["side"] == "left" else "main_w-overlay_w-40"
+    uses = {k: sum(1 for s, f, _, _ in spans if (s, f) == k) for k in idx}
+    fc = []
+    for k, i in idx.items():
+        n_uses = uses[k]
+        labels = "".join(f"[f{i}_{j}]" for j in range(n_uses))
+        if n_uses > 1:
+            fc.append(f"[{i}:v]scale={fw}:-1,split={n_uses}{labels}")
+        else:
+            fc.append(f"[{i}:v]scale={fw}:-1{labels}")
+
+    # One overlay per line, each sliding in from its own side. The slide is the
+    # cue that the speaker CHANGED -- without it the two characters just swap
+    # instantly and the eye misses the handover.
+    taken = {k: 0 for k in idx}
+    last = "0:v"
+    for n, (sp, face, a, b) in enumerate(spans):
+        i = idx[(sp, face)]
+        j = taken[(sp, face)]; taken[(sp, face)] += 1
+        t0, t1 = a / 1000, b / 1000
+        s = SLIDE_S
+        if SPEAKERS[sp]["side"] == "left":
+            x = (f"if(lt(t-{t0:.2f},{s}),-overlay_w+((t-{t0:.2f})/{s})*(overlay_w+{MARGIN}),{MARGIN})")
+        else:
+            x = (f"if(lt(t-{t0:.2f},{s}),main_w-((t-{t0:.2f})/{s})*(overlay_w+{MARGIN}),"
+                 f"main_w-overlay_w-{MARGIN})")
         nxt = f"v{n}"
-        fc.append(f"[{last}][f{i}]overlay=x={x}:y=main_h-overlay_h-320:"
-                  f"enable='{enable}'[{nxt}]")
-        last, n = nxt, n + 1
+        fc.append(f"[{last}][f{i}_{j}]overlay=x='{x}':y=main_h-overlay_h-{BOTTOM_PAD}:"
+                  f"enable='between(t,{t0:.2f},{t1:.2f})'[{nxt}]")
+        last = nxt
 
     cmd += ["-filter_complex", ";".join(fc), "-map", f"[{last}]", "-map", "0:a?",
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
@@ -272,10 +298,30 @@ def render(script: dict, footage: list[Path]) -> Path:
 
     voice, words, spans = build_audio(lines, stem)
     ass = OUT / f"{stem}_captions.ass"
-    build_caption_file(words, ass)
+    build_caption_file(words, ass, centre=True)
+
+    # Title card, same device as the story channel: it states the promise before
+    # anyone has heard a word, which is what stops the scroll. Held until the
+    # first line's narration ends rather than a fixed duration, so it never cuts
+    # a question in half.
+    card = None
+    card_seconds = None
+    try:
+        from hook_card import build_hook_card, format_hook_for_display
+        card = str(OUT / f"{stem}_card.png")
+        build_hook_card(format_hook_for_display(script.get("title") or script["topic"]),
+                        card,
+                        handle="@thecarveteran",
+                        avatar_path=str(ROOT / "branding" / "logo_carveteran.png"))
+        first = next((b for _, _, a, b in spans[:1]), None)
+        card_seconds = (first / 1000 + 0.4) if first else 3.5
+    except Exception as e:
+        print(f"  (title card skipped: {e})")
+        card = None
 
     plain = OUT / f"{stem}_plain.mp4"
-    assemble_video_dynamic([str(f) for f in footage], str(voice), str(ass), str(plain))
+    assemble_video_dynamic([str(f) for f in footage], str(voice), str(ass), str(plain),
+                           hook_card_path=card, hook_card_seconds=card_seconds)
 
     out = OUT / f"{stem}.mp4"
     final = overlay_faces(plain, spans, out)
