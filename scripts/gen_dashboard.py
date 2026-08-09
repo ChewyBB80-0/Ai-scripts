@@ -99,6 +99,14 @@ def build():
         yt_views = sum(v["views"] for v in vids)
         fetched = max(fetched, s.get("fetchedAt", "") or "")
         is_main = acc.id == "parkourflux"
+        # Stamp the channel onto every row. Once several channels are merged into
+        # one table, a row without its channel is unreadable -- and the merge
+        # happens client-side, where the account is no longer in scope.
+        display = s.get("channel") or acc.name
+        for v in vids:
+            v["ch"] = display
+        for m in ig.get("media", []):
+            m["ch"] = display
         accounts.append({
             "id": acc.id,
             "name": s.get("channel") or acc.name,
@@ -222,6 +230,18 @@ select.range{background:var(--alt);border:1px solid var(--border);color:var(--te
 .thumb img{width:100%;height:100%;object-fit:cover;display:block}
 .thumb .ov{position:absolute;left:0;right:0;bottom:0;padding:14px 8px 7px;background:linear-gradient(transparent,rgba(0,0,0,.82));color:#fff;font-size:12px;font-weight:700;font-variant-numeric:tabular-nums}
 .thumb .tl{font-size:10px;color:var(--muted);margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* cross-channel detail table: the one thing the layout was missing -- a single
+   sortable list of everything that went out, so two channels can be compared
+   row by row instead of tab by tab */
+.dt{width:100%;border-collapse:collapse;font-size:12.5px;min-width:640px}
+.dt th{text-align:left;padding:8px 10px;border-bottom:2px solid var(--border);color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em;cursor:pointer;user-select:none;white-space:nowrap}
+.dt th:hover{color:var(--text)}
+.dt td{padding:8px 10px;border-bottom:1px solid var(--border)}
+.dt tbody tr:hover{background:var(--alt)}
+.dt td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.dt a{color:var(--text);text-decoration:none}.dt a:hover{text-decoration:underline}
+.dt .tag{font-size:10px;padding:2px 6px;border-radius:5px;background:var(--alt);color:var(--muted);white-space:nowrap}
+.dt .tag.yt{color:var(--red)}.dt .tag.ig{color:var(--pink)}
 </style></head><body>
 <div class="app">
  <aside class="side"><div class="brand">Channels</div>
@@ -273,6 +293,15 @@ select.range{background:var(--alt);border:1px solid var(--border);color:var(--te
    <div class="card"><div class="ct">Recent posts</div><div class="thumbs" id="thumbs"></div></div>
    <div class="card"><div class="ct">🏆 Most-viewed video (all platforms)</div><div class="feat" id="feat"></div></div>
    <div class="card"><div class="ct">Posting activity (videos/day)</div><div class="scroll" id="cPosts"></div></div>
+   <div class="card">
+    <div class="charthead">
+     <div class="ct" style="margin:0">Every post <span class="note" id="dtCount"></span></div>
+     <div class="chartctl">
+      <select class="range" id="dtPlat"><option value="all" selected>Both platforms</option><option value="YouTube">YouTube</option><option value="Instagram">Instagram</option></select>
+     </div>
+    </div>
+    <div class="scroll"><table class="dt" id="dtTable"></table></div>
+   </div>
   </section>
 
   <section class="tab" data-t="youtube">
@@ -571,6 +600,65 @@ function renderLibrary(){
    :'<div class="un"><span class="tt" style="opacity:.6">Nothing scheduled — the queue is empty.</span></div>';
 }
 
+// ---- cross-channel detail table ----
+// One row per published post, both platforms, whichever channels are in scope.
+// The per-platform tabs answer "how is YouTube doing"; this answers "what did we
+// actually put out and how did each one do", which is the question you ask when
+// two channels are running at once.
+let dtSort='views', dtDir=-1, dtPlat='all';
+function dtRows(){
+ const rows=[];
+ (D.videos||[]).forEach(v=>{
+  // A scheduled or hidden upload has no audience yet; showing it with 0 views
+  // next to published rows makes it look like a flop rather than unreleased.
+  const pending=!!v.publishAt||(v.privacy&&v.privacy!=='public');
+  rows.push({date:(v.publishedAt||'').slice(0,10),title:v.title||'',ch:v.ch||'',
+   plat:'YouTube',views:v.views||0,likes:v.likes||0,comments:v.comments||0,
+   url:'https://youtube.com/watch?v='+v.videoId,pending:pending});
+ });
+ (IG.media||[]).forEach(m=>{
+  rows.push({date:(m.timestamp||'').slice(0,10),title:(m.caption||'').split('
+')[0],
+   ch:m.ch||'',plat:'Instagram',views:m.views||0,likes:m.likes||0,
+   comments:m.comments||0,url:m.permalink||'',pending:false});
+ });
+ return dtPlat==='all'?rows:rows.filter(r=>r.plat===dtPlat);
+}
+function renderDetail(){
+ const rows=dtRows().sort((a,b)=>{
+  const x=a[dtSort],y=b[dtSort];
+  if(typeof x==='number'&&typeof y==='number')return (x-y)*dtDir;
+  return String(x).localeCompare(String(y))*dtDir;
+ });
+ $('dtCount').textContent='· '+rows.length+' row'+(rows.length===1?'':'s');
+ const cols=[['date','Date'],['title','Title'],['ch','Channel'],['plat','Platform'],
+             ['views','Views'],['likes','Likes'],['comments','Comments']];
+ const head='<thead><tr>'+cols.map(([k,l])=>{
+   const arrow=dtSort===k?(dtDir===1?' ▲':' ▼'):'';
+   const cls=['views','likes','comments'].includes(k)?' class="n"':'';
+   return `<th${cls} data-k="${k}">${l}${arrow}</th>`}).join('')+'</tr></thead>';
+ const body='<tbody>'+(rows.length?rows.map(r=>{
+   const tag=r.plat==='YouTube'?'<span class="tag yt">YT</span>':'<span class="tag ig">IG</span>';
+   const t=esc(r.title).slice(0,68)||'(untitled)';
+   const link=r.url?`<a href="${r.url}" target="_blank" rel="noopener">${t}</a>`:t;
+   const nums=r.pending?'<td class="n" colspan="3" style="color:var(--muted)">not published yet</td>'
+     :`<td class="n">${fmt(r.views)}</td><td class="n">${fmt(r.likes)}</td><td class="n">${fmt(r.comments)}</td>`;
+   return `<tr><td style="white-space:nowrap;color:var(--muted)">${r.date||'—'}</td>`+
+          `<td>${link}</td><td style="white-space:nowrap">${esc(r.ch)}</td>`+
+          `<td>${tag}</td>${nums}</tr>`;
+ }).join(''):'<tr><td colspan="7" class="note">Nothing published in this scope yet.</td></tr>')+'</tbody>';
+ const el=$('dtTable');
+ el.innerHTML=head+body;
+ el.querySelectorAll('th').forEach(th=>th.onclick=()=>{
+  const k=th.dataset.k;
+  if(dtSort===k)dtDir=-dtDir; else {dtSort=k;dtDir=['views','likes','comments'].includes(k)?-1:1;}
+  renderDetail();
+ });
+}
+// Titles and captions are user text going into innerHTML -- escape them.
+function esc(x){return String(x==null?'':x).replace(/[&<>"']/g,c=>(
+ {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
 // ---- compute ----
 function render(){
  const igt=IG.totalViews||0,ttt=ttTotal();const allViews=D.totalViews+igt+ttt;
@@ -582,7 +670,7 @@ function render(){
  $('mViews').textContent=fmt(allViews);$('mLikes').textContent=fmt(allLikes);$('mCmts').textContent=fmt(allCmts);
  $('mShares').textContent=fmt(allShares);$('mEng').textContent=eng.toFixed(2)+'%';
  renderLibrary();
- renderThumbs();drawViewsChart();
+ renderThumbs();drawViewsChart();renderDetail();
  line($('cSubs'),D.history.map(h=>({x:new Date(h.t).getTime(),y:subsValue(h)})),'var(--amber)');
  // most-viewed across platforms
  let top=D.videos[0]?{title:D.videos[0].title,views:D.videos[0].views,url:'https://youtube.com/watch?v='+D.videos[0].videoId,platform:'YouTube'}:null;
@@ -639,6 +727,7 @@ function render(){
 buildChanSel();applyScope();renderHeader();render();
 // chart Delta/Cumulative toggle + time range
 $('platSel').onchange=e=>{chartPlat=e.target.value;drawViewsChart()};
+$('dtPlat').onchange=e=>{dtPlat=e.target.value;renderDetail()};
 $('tgCumul').onclick=()=>{chartMode='cumul';$('tgCumul').classList.add('on');$('tgDelta').classList.remove('on');drawViewsChart()};
 $('tgDelta').onclick=()=>{chartMode='delta';$('tgDelta').classList.add('on');$('tgCumul').classList.remove('on');drawViewsChart()};
 $('rangeSel').onchange=()=>{chartRange=+$('rangeSel').value;drawViewsChart()};
