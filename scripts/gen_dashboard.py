@@ -486,6 +486,11 @@ function subsValue(row){
 const PLAT_LABEL={all:'all platforms',yt:'YouTube',ig:'Instagram'};
 const PLAT_COLOR={all:'var(--mint)',yt:'var(--red)',ig:'var(--pink)'};
 function drawViewsChart(){let h=D.history.slice();
+ // For ONE channel, drop snapshots from before it existed. Without this a
+ // channel that launched today plots a flat zero line back to July and the
+ // footnote claims 500 snapshots of it, which is simply untrue.
+ if(CUR!=='all')h=h.filter(r=>r.acc?(r.acc[CUR]!==undefined):(CUR==='parkourflux'));
+ const scoped=h.length;
  if(chartRange){const cut=Date.now()-chartRange*864e5;h=h.filter(x=>new Date(x.t).getTime()>=cut)}
  let pts;if(chartMode==='delta'){pts=[];for(let i=1;i<h.length;i++)pts.push({x:new Date(h[i].t).getTime(),y:Math.max(0,seriesValue(h[i],chartPlat)-seriesValue(h[i-1],chartPlat))})}
  else pts=h.map(x=>({x:new Date(x.t).getTime(),y:seriesValue(x,chartPlat)}));
@@ -496,19 +501,23 @@ function drawViewsChart(){let h=D.history.slice();
  // history the wider ranges all render the same chart, and without this the
  // dropdown looks broken when it is actually working.
  let note='';
- if(D.history.length<2){note='Not enough history yet — the chart fills in as the bot runs.'}
+ if(scoped<2){note='Not enough history for this channel yet — the chart fills in as the bot runs.'}
  else if(h.length<2){note='No snapshots in this range. Try a wider one.'}
  else{
   const a=new Date(h[0].t),b=new Date(h[h.length-1].t);
   const fmtd=d=>d.toLocaleDateString([],{month:'short',day:'numeric'})+' '+d.toLocaleTimeString([],{hour:'numeric'});
-  const total=D.history.length;
+  const total=scoped;
   note=`${h.length} of ${total} snapshots · ${fmtd(a)} → ${fmtd(b)} · `+
        (chartMode==='delta'?lbl+' views gained per snapshot':'cumulative '+lbl+' views');
  }
  $('viewsNote').textContent=note}
 function renderThumbs(){const seen=new Set(),items=[];
- for(let i=D.posts.length-1;i>=0&&items.length<12;i--){const p=D.posts[i];if(!p.videoId||seen.has(p.videoId))continue;seen.add(p.videoId);
-  const v=D.videos.find(x=>x.videoId===p.videoId);items.push({id:p.videoId,title:p.title,views:v?v.views:0})}
+ for(let i=D.posts.length-1;i>=0&&items.length<12;i--){const p=D.posts[i];if(!p.videoId||seen.has(p.videoId))continue;
+  // A deleted upload keeps its 'posted' row in the log forever. Without this it
+  // shows here as a broken thumbnail reading 0 views, which looks like a bug in
+  // the dashboard rather than a video the owner removed on purpose.
+  const v=D.videos.find(x=>x.videoId===p.videoId);if(!v)continue;
+  seen.add(p.videoId);items.push({id:p.videoId,title:v.title||p.title,views:v.views})}
  $('thumbs').innerHTML=items.length?items.map(it=>`<a class="thumb" href="https://youtube.com/watch?v=${it.id}" target="_blank"><div class="imgwrap"><img loading="lazy" src="https://i.ytimg.com/vi/${it.id}/hqdefault.jpg" onerror="this.style.opacity=.15"><div class="ov">${fmt(it.views)} views</div></div><div class="tl">${it.title}</div></a>`).join(''):'<div class="note">No posts yet.</div>'}
 
 // ---- library counter: what is actually out there right now ----
