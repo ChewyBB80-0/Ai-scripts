@@ -4,23 +4,25 @@ Regenerates dashboard/live.html -- a full multi-tab ops dashboard with the
 latest stats baked in. The hourly bot runs this after channel_stats.py, so
 the page is always current when opened.
 
-Tabs: Overview (aggregate + growth), YouTube (per-video, real API data),
-Instagram (manual entry -- no auto feed yet), Revenue (actual $0 pre-YPP +
-estimated). Growth charts fill in over time via dashboard/history.json.
+Every panel (Overview, YouTube, Instagram, TikTok, Revenue) can be viewed for
+ONE channel or for all of them combined, via the channel switcher in the
+sidebar. Each account's stats are read from its own out_dir, so adding a
+channel to accounts.json makes it appear here with no further changes.
 
-Reads:  output/channel_stats.json, output/post_log.csv
+Reads:  <out_dir>/channel_stats.json, <out_dir>/ig_stats.json,
+        <out_dir>/post_log.csv  -- for every account
 Writes: dashboard/live.html, dashboard/history.json (append-only snapshots)
 """
 
 import csv
 import json
+import sys
 from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
-STATS = ROOT / "output" / "channel_stats.json"
-IG_STATS = ROOT / "output" / "ig_stats.json"
-POST_LOG = ROOT / "output" / "post_log.csv"
+sys.path.insert(0, str(ROOT))
+
 HIST = ROOT / "dashboard" / "history.json"
 OUT = ROOT / "dashboard" / "live.html"
 
@@ -29,78 +31,105 @@ YPP_SUBS = 1000
 YPP_VIEWS_90D = 10_000_000
 
 
-def _load_posts():
+def _load_posts(path: Path):
     posts = []
-    if not POST_LOG.exists():
+    if not path.exists():
         return posts
-    with open(POST_LOG) as f:
+    with open(path) as f:
         for row in csv.reader(f):
             if len(row) >= 4 and row[3] in ("posted", "posted_manual"):
                 posts.append({"date": row[0][:10], "title": row[1], "videoId": row[2]})
     return posts
 
 
-def _update_history(total_views, subs, fetched, ig_views=0):
-    """Snapshot per-platform views so the chart can show a real all-platforms
-    total. Older rows only have `views` (YouTube), so `yt`/`ig` are stored
-    alongside it and the chart falls back to `views` for those."""
+def _update_history(per_acc: dict, fetched: str):
+    """Append one snapshot carrying EVERY account's numbers.
+
+    Rows keep the old flat keys (views/yt/ig/subs) meaning ParkourFlux, because
+    ~500 existing rows have that shape and rewriting their meaning would put a
+    step in a chart that is measuring real growth. New per-account numbers go in
+    `acc`, and the chart falls back to the flat keys for older rows.
+    """
     hist = json.loads(HIST.read_text()) if HIST.exists() else []
+    main = per_acc.get("parkourflux") or next(iter(per_acc.values()), {})
     if not hist or hist[-1].get("t") != fetched:
-        hist.append({"t": fetched, "views": total_views + ig_views,
-                     "yt": total_views, "ig": ig_views, "subs": subs})
+        hist.append({
+            "t": fetched,
+            "views": main.get("yt", 0) + main.get("ig", 0),
+            "yt": main.get("yt", 0), "ig": main.get("ig", 0),
+            "subs": main.get("subs", 0),
+            "acc": per_acc,
+        })
     hist = hist[-500:]
     HIST.parent.mkdir(parents=True, exist_ok=True)
     HIST.write_text(json.dumps(hist))
     return hist
 
 
-def build():
-    if not STATS.exists():
-        print("No channel_stats.json yet -- run channel_stats.py first.")
-        return
-    s = json.loads(STATS.read_text())
-    vids = sorted(s.get("videos", []), key=lambda v: v["views"], reverse=True)
-    total_views = sum(v["views"] for v in vids)
-    total_likes = sum(v["likes"] for v in vids)
-    total_comments = sum(v.get("comments", 0) for v in vids)
-    fetched = s.get("fetchedAt", "")
-    # load IG first so the history snapshot can record both platforms
-    ig = json.loads(IG_STATS.read_text()) if IG_STATS.exists() else {"totalViews": 0, "media": []}
-    hist = _update_history(total_views, s.get("subscribers", 0), fetched,
-                           ig_views=ig.get("totalViews", 0))
-
-    # TikTok drafts waiting on the production audit -- counted, not linked,
-    # since sandbox posts aren't publicly viewable yet.
-    tt_q = ROOT / "output" / "tiktok_queue.json"
+def _read(path: Path, default):
     try:
-        tt_rows = json.loads(tt_q.read_text(encoding="utf-8"))
+        return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
-        tt_rows = []
+        return default
+
+
+def build():
+    import config  # noqa: F401  -- loads .env
+    from accounts import all_accounts
+
+    # TikTok is authorised for the main channel only, so its drafts are
+    # attributed there rather than being shown against every channel.
+    tt_rows = _read(ROOT / "output" / "tiktok_queue.json", [])
     tt_drafts = sum(1 for r in tt_rows if r.get("status") == "posted")
     tt_queue = [{"title": r.get("title", ""), "status": r.get("status", ""),
                  "when": r.get("queued", "")} for r in tt_rows][-40:]
 
-    data = {
-        "ttDrafts": tt_drafts,
-        "ttQueue": tt_queue,
-        "channel": s.get("channel", "channel"),
-        "subs": s.get("subscribers", 0),
-        "totalViews": total_views,
-        "totalLikes": total_likes,
-        "totalComments": total_comments,
-        "count": len(vids),
-        "fetched": fetched,
-        "videos": vids,
-        "history": hist,
-        "ig": ig,
-        "posts": _load_posts(),
-        "rpm": RPM,
-        "yppSubs": YPP_SUBS,
-        "yppViews": YPP_VIEWS_90D,
-    }
+    accounts, per_acc, fetched = [], {}, ""
+    for acc in all_accounts():
+        out_dir = ROOT / acc.out_dir
+        s = _read(out_dir / "channel_stats.json", None)
+        ig = _read(out_dir / "ig_stats.json", {"totalViews": 0, "media": []})
+        if s is None and not ig.get("media"):
+            continue                      # nothing collected for this channel yet
+        s = s or {"videos": [], "subscribers": 0, "channel": acc.name}
+        vids = sorted(s.get("videos", []), key=lambda v: v["views"], reverse=True)
+        # Sum the per-video counts rather than trusting the channel-level
+        # statistic: for a channel days old that figure still reports 0 while
+        # its videos already have views.
+        yt_views = sum(v["views"] for v in vids)
+        fetched = max(fetched, s.get("fetchedAt", "") or "")
+        is_main = acc.id == "parkourflux"
+        accounts.append({
+            "id": acc.id,
+            "name": s.get("channel") or acc.name,
+            "handle": acc.handle,
+            "subs": s.get("subscribers", 0),
+            "totalViews": yt_views,
+            "totalLikes": sum(v["likes"] for v in vids),
+            "totalComments": sum(v.get("comments", 0) for v in vids),
+            "count": len(vids),
+            "videos": vids,
+            "ig": ig,
+            "posts": _load_posts(out_dir / "post_log.csv"),
+            "ttDrafts": tt_drafts if is_main else 0,
+            "ttQueue": tt_queue if is_main else [],
+            "ttConnected": is_main,
+        })
+        per_acc[acc.id] = {"yt": yt_views, "ig": ig.get("totalViews", 0),
+                           "subs": s.get("subscribers", 0)}
+
+    if not accounts:
+        print("No per-account stats yet -- run channel_stats.py / ig_stats.py first.")
+        return
+
+    hist = _update_history(per_acc, fetched or datetime.now().isoformat(timespec="seconds"))
+    data = {"accounts": accounts, "history": hist, "fetched": fetched,
+            "rpm": RPM, "yppSubs": YPP_SUBS, "yppViews": YPP_VIEWS_90D}
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(_TEMPLATE.replace("/*DATA*/", json.dumps(data)), encoding="utf-8")
-    print(f"Live dashboard -> {OUT}  ({total_views} views, {len(vids)} videos, {len(hist)} history pts)")
+    tot = sum(a["totalViews"] + a["ig"].get("totalViews", 0) for a in accounts)
+    print(f"Live dashboard -> {OUT}  ({len(accounts)} channel(s), {tot} views "
+          f"all platforms, {len(hist)} history pts)")
 
 
 _TEMPLATE = r"""<!doctype html><html lang="en"><head>
@@ -117,6 +146,15 @@ _TEMPLATE = r"""<!doctype html><html lang="en"><head>
 .nav button{display:flex;align-items:center;gap:10px;text-align:left;background:none;border:none;color:var(--muted);font-size:14px;padding:10px 12px;border-radius:8px;cursor:pointer;width:100%}
 .nav button:hover{background:var(--alt)}.nav button.on{background:var(--alt);color:var(--text);font-weight:600}
 .nav .ic{width:8px;height:8px;border-radius:50%;background:currentColor;opacity:.7}
+/* channel switcher: same affordance as the nav so it reads as navigation, but
+   boxed so it is clearly a different axis (whose data) from the tabs (which view) */
+.chan{display:flex;flex-direction:column;gap:3px;background:var(--alt);border:1px solid var(--border);border-radius:9px;padding:4px}
+.chan button{display:flex;align-items:center;gap:8px;text-align:left;background:none;border:none;color:var(--muted);font-size:13px;padding:8px 9px;border-radius:6px;cursor:pointer;width:100%}
+.chan button:hover{color:var(--text)}
+.chan button.on{background:var(--surface);color:var(--text);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.18)}
+.chan .cdot{width:7px;height:7px;border-radius:50%;flex-shrink:0;background:currentColor}
+.chan .cn2{font-size:10px;color:var(--muted);margin-left:auto;font-variant-numeric:tabular-nums}
+.chandle{color:var(--muted)}
 .main{flex:1;padding:28px 28px 60px;max-width:900px}
 h1{font-size:22px;margin:0 0 4px}.sub{color:var(--muted);font-size:12px;margin-bottom:22px;display:flex;align-items:center;gap:6px}
 .dot{width:7px;height:7px;border-radius:50%;background:var(--mint);animation:p 2s infinite}@keyframes p{0%,100%{opacity:1}50%{opacity:.3}}
@@ -186,7 +224,9 @@ select.range{background:var(--alt);border:1px solid var(--border);color:var(--te
 .thumb .tl{font-size:10px;color:var(--muted);margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 </style></head><body>
 <div class="app">
- <aside class="side"><div class="brand">ParkourFlux</div><nav class="nav" id="nav">
+ <aside class="side"><div class="brand">Channels</div>
+  <div class="chan" id="chanSel"></div>
+  <div class="brand" style="padding-top:18px">View</div><nav class="nav" id="nav">
   <button data-t="overview" class="on"><span class="ic" style="color:var(--violet)"></span>Overview</button>
   <button data-t="youtube"><span class="ic" style="color:var(--red)"></span>YouTube</button>
   <button data-t="instagram"><span class="ic" style="color:var(--pink)"></span>Instagram</button>
@@ -195,7 +235,7 @@ select.range{background:var(--alt);border:1px solid var(--border);color:var(--te
   <button data-t="assistant"><span class="ic" style="color:var(--mint)"></span>Assistant</button>
  </nav></aside>
  <main class="main">
-  <h1 id="ch"></h1><div class="sub"><span class="dot"></span><span id="sync"></span></div>
+  <h1 id="ch"></h1><div class="sub"><span id="chSub" class="chandle"></span><span class="dot"></span><span id="sync"></span></div>
 
   <section class="tab on" data-t="overview">
    <div class="card libcard">
@@ -259,6 +299,7 @@ select.range{background:var(--alt);border:1px solid var(--border);color:var(--te
    <div class="tiles">
     <div class="tile"><div class="v" id="ttv">0</div><div class="l">TikTok views (manual)</div></div>
     <div class="tile"><div class="v" id="ttcnt">0</div><div class="l">Posts tracked</div></div></div>
+   <div class="note" id="ttScopeNote" style="margin-bottom:12px"></div>
    <div class="card"><div class="ct">Connection status</div>
     <div class="feat"><div><div><span class="pill">Connected · draft mode</span></div>
      <div class="note" style="margin-top:8px">Authorized 22 Jul 2026 — the pipeline can push any rendered video
@@ -306,14 +347,73 @@ select.range{background:var(--alt);border:1px solid var(--border);color:var(--te
   <footer>Auto-refreshes every 5 min · regenerated hourly by the bot · YouTube + Instagram = live API · TikTok = drafts, manual stats</footer>
  </main></div>
 <script>
-const D=/*DATA*/;const $=id=>document.getElementById(id);
+const ALL=/*DATA*/;const $=id=>document.getElementById(id);
 const fmt=n=>n>=1e6?(n/1e6).toFixed(1).replace(/\.0$/,'')+'M':n>=1e3?(n/1e3).toFixed(1).replace(/\.0$/,'')+'K':Math.round(n).toLocaleString();
 const money=n=>'$'+(n<100?n.toFixed(2):Math.round(n).toLocaleString());
 
-// ---- manual IG views (localStorage) ----
-const IG=D.ig||{totalViews:0,media:[]};
+// ---- channel scope ----
+// Every panel reads D (YouTube side) and IG. Rather than teach each renderer
+// about channels, we rebuild D and IG for the selected channel and re-run the
+// same render(). "all" sums the channels; picking one narrows to it. That keeps
+// the switcher to one concept instead of threading an account id through every
+// chart, list and counter.
+const ACCS=ALL.accounts||[];
+const SCOPEK='pf_scope';
+let CUR=localStorage.getItem(SCOPEK)||'all';
+if(CUR!=='all'&&!ACCS.some(a=>a.id===CUR))CUR='all';
+let D,IG;
+function combine(list){
+ const ig={totalViews:0,media:[]};
+ list.forEach(a=>{ig.totalViews+=(a.ig.totalViews||0);ig.media=ig.media.concat(a.ig.media||[])});
+ ig.media.sort((x,y)=>(y.views||0)-(x.views||0));
+ return {
+  // Subscribers ADD across channels; views/likes are sums too. There is no
+  // meaningful combined "channel name", so the header names the scope instead.
+  name:list.length===1?list[0].name:'All channels',
+  handle:list.length===1?list[0].handle:list.map(a=>a.handle).join(' · '),
+  subs:list.reduce((n,a)=>n+a.subs,0),
+  totalViews:list.reduce((n,a)=>n+a.totalViews,0),
+  totalLikes:list.reduce((n,a)=>n+a.totalLikes,0),
+  totalComments:list.reduce((n,a)=>n+a.totalComments,0),
+  count:list.reduce((n,a)=>n+a.count,0),
+  videos:list.flatMap(a=>a.videos).sort((x,y)=>y.views-x.views),
+  posts:list.flatMap(a=>a.posts),
+  ttDrafts:list.reduce((n,a)=>n+(a.ttDrafts||0),0),
+  ttQueue:list.flatMap(a=>a.ttQueue||[]),
+  ttConnected:list.some(a=>a.ttConnected),
+  ig, history:ALL.history, rpm:ALL.rpm, yppSubs:ALL.yppSubs, yppViews:ALL.yppViews,
+  fetched:ALL.fetched, ids:list.map(a=>a.id),
+ };
+}
+function applyScope(){
+ const list=CUR==='all'?ACCS:ACCS.filter(a=>a.id===CUR);
+ D=combine(list.length?list:ACCS);IG=D.ig;
+ document.querySelectorAll('#chanSel button').forEach(b=>b.classList.toggle('on',b.dataset.c===CUR));
+ // TikTok is only authorised on the main channel; say so rather than showing
+ // an empty panel that looks broken.
+ const tn=$('ttScopeNote');
+ if(tn)tn.textContent=D.ttConnected?'':'TikTok is not connected for this channel — only '+
+   (ACCS.find(a=>a.ttConnected)||{name:'the main channel'}).name+' is authorised.';
+}
 const TTK='pf_tt_views';let tt={};try{tt=JSON.parse(localStorage.getItem(TTK)||'{}')}catch(e){}
 function ttTotal(){return Object.values(tt).reduce((a,b)=>a+(+b||0),0)}
+
+// ---- channel switcher ----
+// "All channels" first and default: the combined number is the one that answers
+// "how is this doing overall", and drilling into a channel is the follow-up.
+const CH_COLORS=['var(--violet)','var(--mint)','var(--amber)','var(--pink)'];
+function buildChanSel(){
+ const rows=[{id:'all',name:'All channels',n:ACCS.length}]
+   .concat(ACCS.map((a,i)=>({id:a.id,name:a.name,n:null,c:CH_COLORS[i%CH_COLORS.length]})));
+ $('chanSel').innerHTML=rows.map(r=>
+  `<button data-c="${r.id}"><span class="cdot" style="color:${r.c||'var(--muted)'}"></span>`+
+  `<span>${r.name}</span>${r.n!==null?`<span class="cn2">${r.n}</span>`:''}</button>`).join('');
+ $('chanSel').addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b||b.dataset.c===CUR)return;
+  CUR=b.dataset.c;try{localStorage.setItem(SCOPEK,CUR)}catch(_){}
+  applyScope();renderHeader();render();
+ });
+}
 
 // ---- tabs ----
 $('nav').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
@@ -321,8 +421,13 @@ $('nav').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)r
  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t.dataset.t===b.dataset.t));});
 
 // ---- header ----
-$('ch').textContent=D.channel;
-const f=D.fetched?new Date(D.fetched):null;
+// Named by scope, so it is always obvious whose numbers are on screen -- the
+// single most important thing to get right once one page shows several channels.
+function renderHeader(){
+ $('ch').textContent=D.name;
+ $('chSub').textContent=D.handle||'';
+}
+const f=ALL.fetched?new Date(ALL.fetched):null;
 function ago(){if(!f){$('sync').textContent='no sync yet';return}const m=Math.round((Date.now()-f)/60000);
  $('sync').textContent=m<1?'synced just now':m<60?'synced '+m+' min ago':'synced '+Math.round(m/60)+'h ago'}
 ago();setInterval(ago,30000);
@@ -356,10 +461,27 @@ let chartMode='cumul',chartRange=0,chartPlat='all';
 // Pull one platform's views out of a history row. Rows written before
 // per-platform tracking only have `views` (YouTube-only), so fall back to it
 // for yt and treat ig as 0 rather than dropping those points from the chart.
+// Scope-aware: `acc` carries every channel's numbers. Rows written before the
+// second channel existed have only the flat keys, which were ParkourFlux --
+// so for that channel we fall back to them and its history stays continuous,
+// and for a newer channel those old rows correctly contribute nothing.
 function seriesValue(row,plat){
- const yt=row.yt!==undefined?row.yt:(row.views||0);
- const ig=row.ig!==undefined?row.ig:0;
+ let yt,ig;
+ if(row.acc){
+  const ids=CUR==='all'?Object.keys(row.acc):[CUR];
+  yt=ids.reduce((n,i)=>n+((row.acc[i]||{}).yt||0),0);
+  ig=ids.reduce((n,i)=>n+((row.acc[i]||{}).ig||0),0);
+ }else{
+  const isMain=CUR==='all'||CUR==='parkourflux';
+  yt=isMain?(row.yt!==undefined?row.yt:(row.views||0)):0;
+  ig=isMain?(row.ig!==undefined?row.ig:0):0;
+ }
  return plat==='yt'?yt:plat==='ig'?ig:yt+ig;
+}
+function subsValue(row){
+ if(row.acc){const ids=CUR==='all'?Object.keys(row.acc):[CUR];
+  return ids.reduce((n,i)=>n+((row.acc[i]||{}).subs||0),0)}
+ return (CUR==='all'||CUR==='parkourflux')?(row.subs||0):0;
 }
 const PLAT_LABEL={all:'all platforms',yt:'YouTube',ig:'Instagram'};
 const PLAT_COLOR={all:'var(--mint)',yt:'var(--red)',ig:'var(--pink)'};
@@ -448,7 +570,7 @@ function render(){
  $('mShares').textContent=fmt(allShares);$('mEng').textContent=eng.toFixed(2)+'%';
  renderLibrary();
  renderThumbs();drawViewsChart();
- line($('cSubs'),D.history.map(h=>({x:new Date(h.t).getTime(),y:h.subs})),'var(--amber)');
+ line($('cSubs'),D.history.map(h=>({x:new Date(h.t).getTime(),y:subsValue(h)})),'var(--amber)');
  // most-viewed across platforms
  let top=D.videos[0]?{title:D.videos[0].title,views:D.videos[0].views,url:'https://youtube.com/watch?v='+D.videos[0].videoId,platform:'YouTube'}:null;
  IG.media.forEach(m=>{if(m.views>(top?top.views:0))top={title:m.caption,views:m.views,url:m.permalink,platform:'Instagram'}});
@@ -501,7 +623,7 @@ function render(){
  $('subProg').textContent=fmt(D.subs)+' / '+fmt(D.yppSubs);$('subBar').style.width=Math.min(100,D.subs/D.yppSubs*100)+'%';
  $('viewProg').textContent=fmt(D.totalViews)+' / '+fmt(D.yppViews);$('viewBar').style.width=Math.min(100,D.totalViews/D.yppViews*100)+'%';
 }
-render();
+buildChanSel();applyScope();renderHeader();render();
 // chart Delta/Cumulative toggle + time range
 $('platSel').onchange=e=>{chartPlat=e.target.value;drawViewsChart()};
 $('tgCumul').onclick=()=>{chartMode='cumul';$('tgCumul').classList.add('on');$('tgDelta').classList.remove('on');drawViewsChart()};
