@@ -467,6 +467,26 @@ def log_post(story_title: str, video_id: str | None, status: str):
         writer.writerow([datetime.now().astimezone().isoformat(), story_title, video_id or "", status])
 
 
+GIFTS_MIN_FOLLOWERS = 500      # Instagram's eligibility bar for Gifts
+
+
+def _gifts_available(acc: Account) -> bool:
+    """True once this channel can actually RECEIVE a gift.
+
+    Gifts needs 500 followers. Asking for one below that bar asks for something
+    the viewer cannot do -- the gift control is not on the Reel -- which reads
+    as begging and costs the goodwill the ask depends on. Follower count comes
+    from the account's own ig_stats.json, so this switches itself on the first
+    run after the channel crosses the line.
+    """
+    try:
+        d = json.loads((Path(acc.out_dir) / "ig_stats.json")
+                       .read_text(encoding="utf-8"))
+        return int(d.get("followers", 0)) >= GIFTS_MIN_FOLLOWERS
+    except Exception:
+        return False
+
+
 def _dialogue_caption(acc: Account, script: dict) -> str:
     """Instagram caption for a dialogue episode.
 
@@ -474,13 +494,23 @@ def _dialogue_caption(acc: Account, script: dict) -> str:
     share-bait on fiction. An explainer post earns a FOLLOW instead, so the
     caption restates the saving in the first line (the only part shown before
     "more") and then asks for the follow.
+
+    The gift ask lives HERE and not in the spoken outro because this caption is
+    Instagram-only -- the same video also goes to YouTube, where Stars do not
+    exist, so a spoken "send a gift" would be nonsense on half its destinations.
+
+    It is also tied to the value just delivered rather than asking cold. Stars
+    are a tip: someone sends one because they feel something, and "you just
+    saved money" is that feeling. A generic "support us" has nothing behind it.
     """
     payoff = next((l["text"] for l in reversed(script["lines"])
                    if l["speaker"] == "VET"), "")
+    gift = ("\n\nIf this saved you money, a ⭐ says thanks louder than a like."
+            if _gifts_available(acc) else "")
     return (f"{script['title']}\n\n{payoff}\n\n"
             f"Rusty and Sparky break down one dealership upsell at a time, so you "
-            f"stop paying for work you can do yourself. Follow for the next one.\n\n"
-            f"{acc.ig_hashtags}")
+            f"stop paying for work you can do yourself. Follow for the next one."
+            f"{gift}\n\n{acc.ig_hashtags}")
 
 
 def _used_topics(limit: int = 40) -> list[str]:
