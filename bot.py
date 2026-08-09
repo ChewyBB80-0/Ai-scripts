@@ -411,6 +411,85 @@ def log_post(story_title: str, video_id: str | None, status: str):
         writer.writerow([datetime.now().astimezone().isoformat(), story_title, video_id or "", status])
 
 
+def _dialogue_caption(acc: Account, script: dict) -> str:
+    """Instagram caption for a dialogue episode.
+
+    Deliberately not the story channel's caption writer: that one is tuned for
+    share-bait on fiction. An explainer post earns a FOLLOW instead, so the
+    caption restates the saving in the first line (the only part shown before
+    "more") and then asks for the follow.
+    """
+    payoff = next((l["text"] for l in reversed(script["lines"])
+                   if l["speaker"] == "VET"), "")
+    return (f"{script['title']}\n\n{payoff}\n\n"
+            f"Rusty and Sparky break down one dealership upsell at a time, so you "
+            f"stop paying for work you can do yourself. Follow for the next one.\n\n"
+            f"{acc.ig_hashtags}")
+
+
+def _used_topics(limit: int = 40) -> list[str]:
+    """Subjects this channel has already covered, newest last.
+
+    Read from the post log rather than the output folder: the log is what
+    actually went out, so a discarded render never blocks a topic.
+    """
+    if not POST_LOG.exists():
+        return []
+    out = []
+    with open(POST_LOG) as f:
+        for row in csv.reader(f):
+            if len(row) >= 4 and row[3] in USED_STATUSES and row[1]:
+                t = row[1].removeprefix("car_").replace("_", " ")
+                if t not in out:
+                    out.append(t)
+    return out[-limit:]
+
+
+def _run_dialogue(acc: Account, topic_hint: str = "", force: bool = False,
+                  platforms=None):
+    """One pass for a two-voice dialogue channel: write, render, post.
+
+    Same shape as the story path -- honours the account's daily_target, writes
+    to the account's own log and out_dir, and posts through the same
+    _post_video so per-account platform flags and metadata apply -- but the
+    middle step is dialogue_video instead of the story pipeline.
+    """
+    global POST_LOG, QUEUE_FILE
+    import dialogue_video
+
+    POST_LOG = Path(acc.post_log)
+    QUEUE_FILE = Path(acc.queue_file)
+    out_dir = Path(acc.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    print(f"[{acc.id}] run (dialogue)")
+
+    if not force and todays_story_count() >= acc.daily_target:
+        print(f"[{acc.id}] daily target reached ({acc.daily_target}); nothing to do.")
+        return
+
+    clips = pick_background_set(acc, quiet=True)
+    if not clips:
+        log_error(f"No footage available for account '{acc.id}'. Skipping run.")
+        print(f"[{acc.id}] no footage in {acc.footage_dir} -- skipping.")
+        return
+    print(f"[{acc.id}] footage pool: {len(clips)} clip(s)")
+
+    avoid = _used_topics()
+    script = dialogue_video.write_episode(topic=topic_hint, avoid=avoid)
+    print(f"[{acc.id}] {script['title']}")
+    path = dialogue_video.render(script, clips, out=out_dir)
+
+    base = Path(path).stem
+    (out_dir / f"{base}_caption.txt").write_text(
+        _dialogue_caption(acc, script), encoding="utf-8")
+
+    if config.REVIEW_MODE:
+        print(f"[{acc.id}] REVIEW_MODE -- rendered but not posted: {path}")
+        return
+    did = _post_video(path, script["title"], acc=acc, platforms=platforms)
+    print(f"[{acc.id}] posted to: {sorted(did) or 'NOTHING'}")
+
+
 def run_once(background_dir: str | None = None, topic_hint: str = "",
              force: bool = False, account: Account | None = None,
              platforms=None, publish_at: str | None = None,
@@ -423,16 +502,19 @@ def run_once(background_dir: str | None = None, topic_hint: str = "",
     acc = account or load_accounts()[0]
     POST_LOG = Path(acc.post_log)
     QUEUE_FILE = Path(acc.queue_file)
-    # This whole function generates and posts Reddit-style narrated stories. An
-    # account that makes something else must never reach it, whatever flags were
-    # passed -- --account plus --force is enough to bypass `enabled`, which is
-    # exactly how a Reddit revenge story once got generated for a car channel.
+    # Route to the pipeline this channel actually uses. Everything below this
+    # point generates Reddit-style narrated stories; a channel that makes
+    # something else gets its own renderer and its own parameters, rather than
+    # being refused or -- worse -- silently handed the wrong format. That did
+    # happen: --account plus --force bypasses `enabled`, and a Reddit revenge
+    # story was generated for the car channel.
+    if acc.content_type == "dialogue":
+        return _run_dialogue(acc, topic_hint=topic_hint, force=force,
+                             platforms=platforms)
     if acc.content_type != "story":
         raise RuntimeError(
-            f"Account '{acc.id}' is content_type={acc.content_type!r}, not "
-            f"'story'. bot.py only makes narrated Reddit-style stories; posting "
-            f"one to this channel puts the wrong channel's content on it. Use "
-            f"the renderer for that content type instead (dialogue_video.py).")
+            f"Account '{acc.id}' has content_type={acc.content_type!r}, which no "
+            f"pipeline handles. Add a renderer for it or set it to 'story'.")
     Path(acc.out_dir).mkdir(parents=True, exist_ok=True)
     print(f"[{acc.id}] run")
     # One background SET per video: if footage/ has themed subfolders, each
@@ -838,7 +920,27 @@ if __name__ == "__main__":
                     help="Post THIS story from stories/ by title (the filename "
                          "without .json), instead of generating one. Skips "
                          "generation; add --force to re-post one already posted.")
+    ap.add_argument("--post-file", default="",
+                    help="Post an ALREADY-RENDERED video to --account, using "
+                         "that channel's platforms and metadata. Needs "
+                         "--account and --title. Nothing is generated.")
+    ap.add_argument("--title", default="", help="Title for --post-file.")
     args = ap.parse_args()
+
+    # Post one existing file. Goes through the same _post_video as everything
+    # else, so the account's platform flags, tags and post log all apply -- the
+    # point is that a manual post cannot drift from what the automation does.
+    if args.post_file:
+        if not args.account or not args.title:
+            raise SystemExit("--post-file needs --account and --title")
+        acc = get_account(args.account)
+        globals()["POST_LOG"] = Path(acc.post_log)
+        globals()["QUEUE_FILE"] = Path(acc.queue_file)
+        Path(acc.out_dir).mkdir(parents=True, exist_ok=True)
+        did = _post_video(args.post_file, args.title, acc=acc,
+                          platforms=args.platform)
+        print(f"[{acc.id}] posted to: {sorted(did) or 'NOTHING'}")
+        raise SystemExit(0)
     if args.schedule_at:
         args.force = True
         args.platform = "youtube"

@@ -97,12 +97,21 @@ class Line:
     emotion: str = ""       # which face to show; falls back to the default
 
 
-def write_episode(topic: str = "", episode: int = 1, api_key: str | None = None) -> dict:
-    """Ask Claude for a dialogue script. Returns {title, topic, lines[]}."""
+def write_episode(topic: str = "", episode: int = 1, api_key: str | None = None,
+                  avoid: list[str] | None = None) -> dict:
+    """Ask Claude for a dialogue script. Returns {title, topic, lines[]}.
+
+    avoid: subjects already covered. Without this an unattended run picks its own
+    topic with no memory and re-covers the oil-change markup every few days,
+    which reads as a channel that has run out of things to say.
+    """
     import anthropic
 
     client = anthropic.Anthropic(api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"))
     subject = topic or "pick one specific way drivers waste money or damage their car"
+    if avoid:
+        subject += ("\n\nALREADY COVERED -- pick something genuinely different, "
+                    "not a rewording of these:\n- " + "\n- ".join(avoid[-40:]))
     prompt = f"""Write a short two-character dialogue for a vertical short-form video
 about cars. The channel teaches everyday drivers things that save them money.
 
@@ -187,11 +196,12 @@ def _duration_ms(path: Path) -> int:
         return 0
 
 
-def build_audio(lines: list[Line], stem: str) -> tuple[Path, list[dict]]:
+def build_audio(lines: list[Line], stem: str, out: Path | None = None) -> tuple[Path, list[dict]]:
     """Render every line in its speaker's voice, concatenate with a beat
     between them, and shift each line's word timings by where it actually
     starts -- otherwise captions would restart at zero on every line."""
-    OUT.mkdir(parents=True, exist_ok=True)
+    OUT_ = out or OUT
+    OUT_.mkdir(parents=True, exist_ok=True)
     parts, all_words, offset = [], [], 0
 
     # Everything is joined as WAV, not MP3. Concatenating MP3s with -c copy
@@ -204,16 +214,16 @@ def build_audio(lines: list[Line], stem: str) -> tuple[Path, list[dict]]:
     #
     # WAV has no such framing, so the concat is sample-exact and _duration_ms is
     # the truth. One encode at the very end is then the only lossy step.
-    silence = OUT / "_gap.wav"
+    silence = OUT_ / "_gap.wav"
     subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i",
                     "anullsrc=r=24000:cl=mono", "-t", f"{GAP_MS/1000}",
                     "-c:a", "pcm_s16le", str(silence)], capture_output=True)
 
     spans = []          # (speaker, emotion, start_ms, end_ms) -- drives the faces
     for i, ln in enumerate(lines):
-        mp3 = OUT / f"_{stem}_{i:02d}.mp3"
+        mp3 = OUT_ / f"_{stem}_{i:02d}.mp3"
         words = asyncio.run(_speak(ln.text, SPEAKERS[ln.speaker], mp3))
-        p = OUT / f"_{stem}_{i:02d}.wav"
+        p = OUT_ / f"_{stem}_{i:02d}.wav"
         subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(mp3),
                         "-ar", "24000", "-ac", "1", "-c:a", "pcm_s16le",
                         str(p)], capture_output=True)
@@ -231,9 +241,9 @@ def build_audio(lines: list[Line], stem: str) -> tuple[Path, list[dict]]:
         offset += dur + GAP_MS
         parts += [p, silence]
 
-    listf = OUT / f"_{stem}_concat.txt"
+    listf = OUT_ / f"_{stem}_concat.txt"
     listf.write_text("".join(f"file '{p.as_posix()}'\n" for p in parts), encoding="utf-8")
-    voice = OUT / f"{stem}.mp3"
+    voice = OUT_ / f"{stem}.mp3"
     subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0",
                     "-i", str(listf), "-c:a", "libmp3lame", "-q:a", "2",
                     str(voice)], capture_output=True)
@@ -322,7 +332,7 @@ def overlay_faces(video: Path, spans: list, out: Path) -> Path:
     return out
 
 
-def render(script: dict, footage: list[Path]) -> Path:
+def render(script: dict, footage: list[Path], out: Path | None = None) -> Path:
     from assemble import assemble_video_dynamic
 
     lines = [Line(l["speaker"], l["text"], l.get("emotion", "")) for l in script["lines"]]
@@ -333,8 +343,10 @@ def render(script: dict, footage: list[Path]) -> Path:
     stem = re.sub(r"[^a-z0-9]+", "_", script["topic"].lower()).strip("_")[:40] or "episode"
     stem = f"car_{stem}"
 
-    voice, words, spans = build_audio(lines, stem)
-    ass = OUT / f"{stem}_captions.ass"
+    OUT_ = Path(out) if out else OUT
+    OUT_.mkdir(parents=True, exist_ok=True)
+    voice, words, spans = build_audio(lines, stem, OUT_)
+    ass = OUT_ / f"{stem}_captions.ass"
     build_caption_file(words, ass, centre=True)
 
     # Title card, same device as the story channel: it states the promise before
@@ -345,7 +357,7 @@ def render(script: dict, footage: list[Path]) -> Path:
     card_seconds = None
     try:
         from hook_card import build_hook_card, format_hook_for_display
-        card = str(OUT / f"{stem}_card.png")
+        card = str(OUT_ / f"{stem}_card.png")
         build_hook_card(format_hook_for_display(script.get("title") or script["topic"]),
                         card,
                         handle="@thecarveteran",
@@ -356,20 +368,20 @@ def render(script: dict, footage: list[Path]) -> Path:
         print(f"  (title card skipped: {e})")
         card = None
 
-    plain = OUT / f"{stem}_plain.mp4"
+    plain = OUT_ / f"{stem}_plain.mp4"
     assemble_video_dynamic([str(f) for f in footage], str(voice), str(ass), str(plain),
                            cut_min=CUT_MIN, cut_max=CUT_MAX,
                            hook_card_path=card, hook_card_seconds=card_seconds)
 
-    out = OUT / f"{stem}.mp4"
-    final = overlay_faces(plain, spans, out)
-    if final != out:                       # overlay skipped -- keep one artefact
-        plain.replace(out)
+    out_path = OUT_ / f"{stem}.mp4"
+    final = overlay_faces(plain, spans, out_path)
+    if final != out_path:                  # overlay skipped -- keep one artefact
+        plain.replace(out_path)
     else:
         plain.unlink(missing_ok=True)
-    Path(OUT / f"{stem}_script.json").write_text(json.dumps(script, indent=2),
-                                                 encoding="utf-8")
-    return out
+    Path(OUT_ / f"{stem}_script.json").write_text(json.dumps(script, indent=2),
+                                                  encoding="utf-8")
+    return out_path
 
 
 def main():
