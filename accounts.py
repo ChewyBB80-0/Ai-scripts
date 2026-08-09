@@ -176,8 +176,23 @@ def pick_background_set(acc: Account, genre: str | None = None, rng=None,
     import random as _r
     rng = rng or _r
     variants = background_variants(acc)
-    # A dedicated footage/<account_id>/ folder still wins outright.
-    if variants and not (ROOT / "footage" / acc.id).is_dir():
+    # A dedicated footage folder wins outright -- EITHER the footage/<account_id>
+    # convention, OR an explicit custom footage_dir.
+    #
+    # The custom-dir half was missing, and it silently broke channel separation:
+    # carveteran sets footage_dir="footage/gta", there is no footage/carveteran/,
+    # so the guard passed and it was handed the shared themed sets. The car
+    # channel would have posted the parkour channel's Minecraft clips. Nothing
+    # errored -- resolve_footage honoured the setting and pick_background_set,
+    # which is what bot.py actually calls, quietly did not.
+    _own = ROOT / "footage" / acc.id
+    _custom = (ROOT / acc.footage_dir) if acc.footage_dir else None
+    _has_own_footage = _own.is_dir() or (
+        _custom is not None
+        and _custom.resolve() != (ROOT / "footage").resolve()
+        and _custom.is_dir()
+        and any(_custom.glob("*.mp4")))
+    if variants and not _has_own_footage:
         preferred = [d for d in variants
                      for key, genres in _GENRE_SETS.items()
                      if key in d.name.lower() and genre in genres]

@@ -20,8 +20,8 @@ from zoneinfo import ZoneInfo
 import os
 
 import config
-from accounts import (Account, load_accounts, resolve_footage,
-                      pick_background_set)
+from accounts import (Account, all_accounts, get_account, load_accounts,
+                      resolve_footage, pick_background_set)
 from story_bank import (generate_story_via_claude, load_story_bank,
                         split_story_into_parts)
 from tts import generate_voice_edge, make_speakable, save_word_timings, WordTiming
@@ -838,7 +838,26 @@ if __name__ == "__main__":
 
     accs = load_accounts()
     if args.account:
-        accs = [a for a in accs if a.id == args.account]
+        # An explicit --account may name a DISABLED channel, on purpose. That is
+        # what `enabled: false` is for: the hourly run skips a channel while it
+        # is still being set up, but you have to be able to test-post to it by
+        # hand before handing it to the bot. Without this you cannot post to a
+        # new channel at all -- load_accounts() filters it out and --account
+        # then matches nothing, so the run silently does nothing.
+        #
+        # Autonomous runs pass no --account and never see disabled channels.
+        named = [a for a in accs if a.id == args.account]
+        if not named:
+            try:
+                acc = get_account(args.account)      # raises KeyError if absent
+            except KeyError:
+                print(f"No account named {args.account!r}. Known: "
+                      f"{', '.join(a.id for a in all_accounts())}")
+                raise SystemExit(1)
+            print(f"NOTE: '{acc.id}' is DISABLED. Running it because you asked "
+                  f"for it by name -- the hourly run still skips it.")
+            named = [acc]
+        accs = named
     for acc in accs:
         try:
             for _ in range(args.count):
