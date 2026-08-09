@@ -896,7 +896,7 @@ function render(){
  $('rigv').textContent=fmt(IG.totalViews||0);
  const gates=[
    {n:'Professional account', have:D.igPro?1:0, need:1, unit:'', what:'required for every Instagram monetisation feature'},
-   {n:'1,000 followers', have:D.followers||0, need:1000, unit:'followers', what:'entry-level creator features'},
+   {n:'500 followers', have:D.followers||0, need:500, unit:'followers', what:'Gifts — the programme this account is in'},
    {n:'10,000 followers', have:D.followers||0, need:10000, unit:'followers', what:'Subscriptions and Live badges'},
  ];
  $('igGates').innerHTML=gates.map(g=>{
