@@ -170,10 +170,33 @@ def resolve_footage(acc: Account) -> list[Path]:
     return pool
 
 
-# Background sets that are NOT background variants: account-specific folders are
-# handled above, and 'gta' is staged for a future channel -- mixing driving
-# footage into a Minecraft channel looks like a glitch, not variety.
+# Legacy literal. Kept only so an old checkout that still has footage/gta/ stays
+# excluded; live exclusions are DERIVED below, not listed here.
 _NOT_A_VARIANT = {"gta"}
+
+
+def _foreign_footage_dirs(acc: Account) -> set[str]:
+    """Folder names under footage/ that belong to a DIFFERENT account.
+
+    This used to be the hardcoded literal {"gta"}, and that was a trap: renaming
+    footage/gta -> footage/driving silently handed the car channel's clips to
+    the story channel, because the literal still named a folder that no longer
+    existed. Two Reddit stories went out over GTA footage on a Minecraft parkour
+    channel before anyone noticed -- nothing errored, the videos just rendered
+    with the wrong world in them.
+
+    Deriving it from accounts.json means adding a channel with its own
+    footage_dir excludes that folder from every other channel automatically, and
+    renaming a folder can never reopen the hole.
+    """
+    out = set()
+    for a in all_accounts():                    # disabled accounts count too:
+        if a.id == acc.id or not a.footage_dir:  # carveteran is disabled and its
+            continue                             # footage still must not leak
+        d = (ROOT / a.footage_dir).resolve()
+        if d != (ROOT / "footage").resolve() and d.parent == (ROOT / "footage").resolve():
+            out.add(d.name)
+    return out
 
 
 def background_variants(acc: Account) -> list[Path]:
@@ -184,14 +207,20 @@ def background_variants(acc: Account) -> list[Path]:
     consistent look WITHIN a video and a different look BETWEEN videos, which
     is what you want; a montage that cuts between two different worlds
     mid-story reads as a mistake.
+
+    Excluded: another account's footage_dir, anything named for an account, and
+    anything starting with "_" -- the underscore marks a folder that is staged
+    or quarantined rather than ready to publish. footage/_unusable/ holds a clip
+    with a Twitch logo burned into it, and without that rule it was in the draw.
     """
     root = ROOT / "footage"
     if not root.is_dir():
         return []
-    ids = {a.id for a in load_accounts()}
+    ids = {a.id for a in all_accounts()}
+    blocked = _NOT_A_VARIANT | _foreign_footage_dirs(acc) | ids
     out = []
     for d in sorted(root.iterdir()):
-        if (d.is_dir() and d.name not in _NOT_A_VARIANT and d.name not in ids
+        if (d.is_dir() and not d.name.startswith("_") and d.name not in blocked
                 and any(d.glob("*.mp4"))):
             out.append(d)
     return out
