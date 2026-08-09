@@ -483,6 +483,18 @@ def _run_dialogue(acc: Account, topic_hint: str = "", force: bool = False,
     (out_dir / f"{base}_caption.txt").write_text(
         _dialogue_caption(acc, script), encoding="utf-8")
 
+    # TikTok's Creator Rewards only pays on videos of 60s or more, and the
+    # length comes from a model that does not always hit the brief. A short one
+    # is not worth blocking the post over -- it is still fine on IG and YouTube
+    # -- but it must be VISIBLE, or the channel quietly accrues videos that can
+    # never earn there and nothing ever says so.
+    secs = _video_seconds(path)
+    if secs and secs < 60:
+        msg = (f"{base} rendered at {secs:.0f}s -- under TikTok's 60s pay "
+               f"threshold ({len(script['lines'])} lines). Posting anyway.")
+        log_error(msg)
+        print(f"[{acc.id}] WARNING: {msg}")
+
     if config.REVIEW_MODE:
         print(f"[{acc.id}] REVIEW_MODE -- rendered but not posted: {path}")
         return

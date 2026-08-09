@@ -124,12 +124,15 @@ CHARACTERS (use these exact speaker tags):
 TOPIC: {subject}
 
 RULES:
-- 16 to 20 lines total, alternating, starting with ROOKIE or VET. Aim for a
-  finished video of 70-90 seconds: TikTok pays only on videos of 60s or more,
-  and 8-12 lines came out around 52-56s, which earns nothing there. Do NOT pad
-  to reach the length -- add another genuine question the viewer would ask, or a
-  second concrete number. A stretched episode loses people faster than a short
-  one, and the extra length is worthless if nobody reaches it.
+- LENGTH IS A HARD REQUIREMENT: 16 to 20 lines, and at least 200 words of
+  spoken text across all lines combined. Count them. A 14-line script renders at
+  about 65 seconds, which is too close to the 60-second bar TikTok pays at --
+  the same script varies by several seconds depending on the voice, so anything
+  under 200 words risks landing under 60 and earning nothing.
+- Alternate speakers, starting with ROOKIE or VET.
+- Do NOT pad to reach the length. Add another genuine question a real person
+  would ask, or a second concrete number. A stretched episode loses people
+  faster than a short one, and length nobody reaches is worth nothing anywhere.
 - Each line is ONE or TWO short sentences. This is spoken aloud -- keep it tight.
 - Line 1 must be a HOOK: open a loop or state something surprising and specific
   in the first sentence. No throat-clearing, no greetings, no "hey guys".
