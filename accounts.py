@@ -39,13 +39,31 @@ class Account:
     queue_file: str = "output/post_queue/queue.json"
     out_dir: str = "output"
 
+    # The shared IG_USER_ID / IG_ACCESS_TOKEN belong to the ORIGINAL account and
+    # are only a valid fallback for it. Falling back for any other account hands
+    # that channel someone else's credentials, and it fails silently: the post
+    # succeeds, just on the wrong profile. Checked 2026-08-08 with carveteran
+    # half-configured -- acc.ig_user_id returned ParkourFlux's id, and only
+    # ig_enabled=False stood between that and car content on the parkour account.
+    #
+    # So: fall back for the default account, return nothing for the rest. A
+    # missing credential then reads as "not configured" (the IG block in
+    # _post_video is guarded on acc.ig_token) instead of "configured wrong".
+    _DEFAULT_ID = "parkourflux"
+
     @property
     def ig_user_id(self):
-        return os.environ.get(f"IG_USER_ID_{self.id.upper()}") or os.environ.get("IG_USER_ID")
+        own = os.environ.get(f"IG_USER_ID_{self.id.upper()}")
+        if own or self.id != self._DEFAULT_ID:
+            return own
+        return os.environ.get("IG_USER_ID")
 
     @property
     def ig_token(self):
-        return os.environ.get(f"IG_ACCESS_TOKEN_{self.id.upper()}") or os.environ.get("IG_ACCESS_TOKEN")
+        own = os.environ.get(f"IG_ACCESS_TOKEN_{self.id.upper()}")
+        if own or self.id != self._DEFAULT_ID:
+            return own
+        return os.environ.get("IG_ACCESS_TOKEN")
 
 
 def _from_dict(d: dict) -> Account:
