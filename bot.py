@@ -371,7 +371,63 @@ def _post_video(path: str | Path, title: str, acc: Account | None = None,
         except Exception as e:
             log_error(f"TikTok queue failed for {base}: {e}")
 
+    # Report anything that did NOT go out. Both platform blocks above are
+    # compound conditions with no else branch, so a skip is silent and looks
+    # exactly like success to everything downstream -- which is how a video ends
+    # up live on one platform and missing from the other with nothing to say so.
+    # A raised failure already reaches errors.log; this covers the SKIPS, which
+    # nothing reported at all.
+    missing = set(platforms) - _did
+    if missing:
+        lines = [f"⚠️ **Posting problem** — `{base}`",
+                 f"Channel: {acc.name} ({acc.handle})",
+                 f"Wanted: {', '.join(sorted(platforms))}",
+                 f"Posted: {', '.join(sorted(_did)) if _did else 'NOTHING'}",
+                 ""]
+        for p in sorted(missing):
+            lines.append(f"• **{p}** — {_skip_reason(acc, base, p)}")
+        report = "\n".join(lines)
+        print(report)
+        log_error(f"Partial post for {base}: wanted {sorted(platforms)}, "
+                  f"posted {sorted(_did) or 'nothing'}")
+        try:
+            import sys as _sys
+            _sys.path.insert(0, str(Path(__file__).parent / "scripts"))
+            from discord_notify import send_dm
+            # Ping only when NOTHING went out. A one-platform miss is worth
+            # knowing about; it is not worth waking someone for.
+            send_dm(report, ping=not _did)
+        except Exception as e:
+            print(f"(could not send posting report: {e})")
+
     return _did
+
+
+def _skip_reason(acc: Account, base: str, plat: str) -> str:
+    """Why a platform did not receive this video.
+
+    Reads the same conditions the posting blocks gate on, so the answer is the
+    real one rather than a guess. Ordered most-specific first: several can be
+    true at once and the first is the one that actually stopped it.
+    """
+    if plat == "instagram":
+        if not getattr(config, "POST_TO_INSTAGRAM", True):
+            return "config.POST_TO_INSTAGRAM is off"
+        if not acc.ig_enabled:
+            return f"ig_enabled is false for '{acc.id}' in accounts.json"
+        if not acc.ig_token:
+            return (f"no Instagram token for '{acc.id}' — set "
+                    f"IG_ACCESS_TOKEN_{acc.id.upper()} in .env, or run "
+                    f"`python ig_token.py --status`")
+        if base in _ig_posted():
+            return "already on Instagram — skipped as a duplicate"
+        return "the Instagram block raised; see output/errors.log"
+    if plat == "youtube":
+        if todays_upload_count() >= config.YOUTUBE_DAILY_UPLOAD_LIMIT:
+            return (f"YouTube daily upload quota reached "
+                    f"({config.YOUTUBE_DAILY_UPLOAD_LIMIT})")
+        return "the YouTube upload raised; see output/errors.log"
+    return "unknown platform"
 
 
 def _video_seconds(path: str | Path) -> float:
