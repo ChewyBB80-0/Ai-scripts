@@ -89,9 +89,16 @@ def fetch(queries: list[str], out_dir: Path, want: int, key: str) -> list[dict]:
             if (m := re.search(r"_(\d+)\.mp4$", p.name))}
     got = []
 
+    # Cap what any ONE query contributes. Without this the first query fills the
+    # whole quota and the other seven never run -- which is the opposite of why
+    # there are several narrow queries. Fourteen clips of "driving highway" all
+    # look like each other.
+    per_q = max(2, -(-want // max(1, len(queries))))
+
     for q in queries:
         if len(got) >= want:
             break
+        from_q = 0
         url = f"{API}?" + urllib.parse.urlencode(
             {"query": q, "orientation": "landscape", "size": "medium",
              "per_page": 40})
@@ -105,7 +112,7 @@ def fetch(queries: list[str], out_dir: Path, want: int, key: str) -> list[dict]:
             continue
 
         for v in data.get("videos", []):
-            if len(got) >= want:
+            if len(got) >= want or from_q >= per_q:
                 break
             vid = str(v["id"])
             if vid in have or v.get("duration", 0) < MIN_SECONDS:
@@ -125,6 +132,7 @@ def fetch(queries: list[str], out_dir: Path, want: int, key: str) -> list[dict]:
                 dest.unlink(missing_ok=True)
                 continue
             have.add(vid)
+            from_q += 1
             got.append({"file": name, "id": vid, "query": q,
                         "size": f"{f['width']}x{f['height']}",
                         "seconds": v.get("duration"),
