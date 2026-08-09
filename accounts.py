@@ -34,6 +34,15 @@ class Account:
     logo: str = "branding/logo.png"
     daily_target: int = 1
     ig_enabled: bool = True
+    # Publishing metadata. The defaults are the story channel's, which is what
+    # these were hardcoded to before a second channel existed -- posting car
+    # advice with them would have labelled it Minecraft parkour short fiction,
+    # which is wrong on YouTube's side AND tells the algorithm the wrong
+    # audience. Any account that is not telling stories must override them.
+    yt_tags: tuple = ("shorts", "story", "storytime", "short fiction",
+                      "original story", "minecraft", "parkour")
+    yt_hashtags: str = "#shorts #storytime #shortstory #fiction #fyp"
+    ig_hashtags: str = "#reels #fyp #storytime"
     # data files (namespaced per account; default = legacy paths)
     post_log: str = "output/post_log.csv"
     queue_file: str = "output/post_queue/queue.json"

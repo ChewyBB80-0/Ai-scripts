@@ -278,15 +278,18 @@ def _post_video(path: str | Path, title: str, acc: Account | None = None,
     if "youtube" in platforms:
         from youtube_upload import upload_video
         try:
+            # Metadata comes from the ACCOUNT. It used to be hardcoded to the
+            # story channel, so a second channel would have published its
+            # videos tagged minecraft/parkour/short fiction -- wrong on the
+            # page, and worse, it tells YouTube to show it to the wrong people.
+            # The originality note only belongs on fiction, so it is skipped
+            # where the content is factual.
+            _note = (getattr(config, "ORIGINALITY_NOTE", "").strip()
+                     if "fiction" in acc.yt_hashtags else "")
             video_id = upload_video(
                 str(path), title=title,
-                # Says plainly that this is our own fiction. "#redditstories"
-                # and the reddit tag used to sit here, advertising the one
-                # thing we do NOT do -- see config.ORIGINALITY_NOTE.
-                description=(getattr(config, "ORIGINALITY_NOTE", "").strip()
-                             + "\n\n#shorts #storytime #shortstory #fiction #fyp").strip(),
-                tags=["shorts", "story", "storytime", "short fiction",
-                      "original story", "minecraft", "parkour"],
+                description=f"{_note}\n\n{acc.yt_hashtags}".strip(),
+                tags=list(acc.yt_tags),
                 privacy_status=config.PRIVACY_STATUS,
                 token_file=acc.yt_token,
                 publish_at=publish_at,
@@ -328,7 +331,7 @@ def _post_video(path: str | Path, title: str, acc: Account | None = None,
             from instagram_upload import post_reel, post_story
             capf = Path(f"{acc.out_dir}/{base}_caption.txt")
             caption = capf.read_text(encoding="utf-8") if capf.exists() else \
-                f"{title}\n\n#reels #fyp #storytime #reddit"
+                f"{title}\n\n{acc.ig_hashtags}"
             url = upload_public(path)
             post_reel(url, caption=caption, ig_user=acc.ig_user_id, token=acc.ig_token)
             log_post(base, None, "posted_instagram")
