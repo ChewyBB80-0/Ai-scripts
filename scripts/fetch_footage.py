@@ -19,6 +19,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import sys
 import urllib.error
 import urllib.parse
@@ -30,7 +31,12 @@ sys.path.insert(0, str(ROOT))
 
 import env_file  # noqa: E402
 
-API = "https://api.pexels.com/v1/videos/search"
+API = "https://api.pexels.com/videos/search"
+# Pexels sits behind Cloudflare, which rejects the default urllib agent with
+# 403 "error code: 1010" -- a client-signature block, not an auth failure, so
+# it looks exactly like a bad key until you read the body.
+UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+      "Chrome/126.0 Safari/537.36")
 
 # Sets of searches per channel. Several narrow queries beat one broad one --
 # "driving" alone returns a lot of parked cars and steering-wheel close-ups.
@@ -46,22 +52,29 @@ PRESETS = {
 # The pipeline centre-crops to 1080x1920, so anything under 1080 tall gets
 # upscaled and looks soft. Full HD landscape is what the Minecraft footage is.
 MIN_W, MIN_H = 1920, 1080
-MIN_SECONDS = 8
+# Background clips are held 8-13s on the dialogue channel, so anything shorter
+# than that has to loop within a single hold, which is visible.
+MIN_SECONDS = 12
 
 
 def _get(url: str, key: str) -> dict:
-    req = urllib.request.Request(url, headers={"Authorization": key})
+    req = urllib.request.Request(url, headers={"Authorization": key,
+                                               "User-Agent": UA})
     with urllib.request.urlopen(req, timeout=60) as r:
         return json.loads(r.read().decode("utf-8"))
 
 
 def _best_file(video: dict) -> dict | None:
-    """Largest mp4 that clears the minimum. Pexels lists several renditions per
-    video, smallest first, and the last one is not always the biggest."""
+    """SMALLEST mp4 that still clears the minimum.
+
+    Not the largest: the render is 1080 wide, so a 4K rendition is several
+    times the download and the disk for pixels that get scaled away. Anything
+    at or above Full HD already has more detail than the output can show.
+    """
     ok = [f for f in video.get("video_files", [])
           if f.get("file_type") == "video/mp4"
           and (f.get("width") or 0) >= MIN_W and (f.get("height") or 0) >= MIN_H]
-    return max(ok, key=lambda f: f["width"] * f["height"]) if ok else None
+    return min(ok, key=lambda f: f["width"] * f["height"]) if ok else None
 
 
 def _slug(s: str) -> str:
@@ -103,7 +116,10 @@ def fetch(queries: list[str], out_dir: Path, want: int, key: str) -> list[dict]:
             name = f"{_slug(q)}_{vid}.mp4"
             dest = out_dir / name
             try:
-                urllib.request.urlretrieve(f["link"], dest)
+                dreq = urllib.request.Request(f["link"], headers={"User-Agent": UA})
+                with urllib.request.urlopen(dreq, timeout=180) as src:
+                    with open(dest, "wb") as fh:
+                        shutil.copyfileobj(src, fh)
             except Exception as e:
                 print(f"  {name}: download failed ({e})")
                 dest.unlink(missing_ok=True)
