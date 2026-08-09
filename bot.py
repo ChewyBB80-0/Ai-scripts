@@ -937,6 +937,20 @@ if __name__ == "__main__":
         globals()["POST_LOG"] = Path(acc.post_log)
         globals()["QUEUE_FILE"] = Path(acc.queue_file)
         Path(acc.out_dir).mkdir(parents=True, exist_ok=True)
+        # Write the same caption the automated path would. Without this the post
+        # falls back to bare title + hashtags, losing the payoff line and the
+        # follow ask -- and an Instagram caption cannot be edited once live.
+        _p = Path(args.post_file)
+        _sj = _p.with_name(_p.stem + "_script.json")
+        _capf = Path(acc.out_dir) / f"{_p.stem}_caption.txt"
+        if acc.content_type == "dialogue" and _sj.exists() and not _capf.exists():
+            try:
+                _capf.write_text(
+                    _dialogue_caption(acc, json.loads(_sj.read_text(encoding="utf-8"))),
+                    encoding="utf-8")
+                print(f"[{acc.id}] caption written from {_sj.name}")
+            except Exception as _e:
+                print(f"[{acc.id}] caption fallback ({_e})")
         did = _post_video(args.post_file, args.title, acc=acc,
                           platforms=args.platform)
         print(f"[{acc.id}] posted to: {sorted(did) or 'NOTHING'}")
