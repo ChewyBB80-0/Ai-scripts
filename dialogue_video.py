@@ -35,11 +35,32 @@ ROOT = Path(__file__).parent
 OUT = ROOT / "output" / "car_channel"
 
 # --- the cast ---------------------------------------------------------------
-# Original characters. The comedy is the MISMATCH (a worn-out car dispensing
-# hard truths), not any resemblance to an existing character.
-VET = {"voice": "en-US-ChristopherNeural", "rate": "-6%", "pitch": "-25Hz"}
-ROOKIE = {"voice": "en-US-AndrewMultilingualNeural", "rate": "+8%", "pitch": "+25Hz"}
+# Original characters, deliberately archetypes rather than identifiable models:
+# "beat-up 70s muscle" and "shiny modern compact". A recognisable real car given
+# a face is two protected things at once -- vehicle trade dress, which makers do
+# enforce, plus the anthropomorphised-car look that reads as a certain film. The
+# joke is the MISMATCH, not the badge. Faces put the eyes in the HEADLIGHTS,
+# which is the older convention and visually distinct from windscreen-eyes.
+#
+# VOICES: the first pass used two US male neural voices and pitch-shifted them
+# +/-25Hz. They still blurred together -- a shared timbre survives pitch
+# shifting. Changing the ACCENT is the lever that actually works: you can tell
+# them apart inside one word.
+VET = {"name": "Rusty", "voice": "en-US-ChristopherNeural",
+       "rate": "-10%", "pitch": "-40Hz", "side": "left",
+       "faces": ["deadpan", "smug", "eyeroll", "explaining"],
+       "default_face": "deadpan"}
+ROOKIE = {"name": "Sparky", "voice": "en-GB-RyanNeural",
+          "rate": "+10%", "pitch": "+30Hz", "side": "right",
+          "faces": ["happy", "question", "shocked", "delighted"],
+          "default_face": "happy"}
 SPEAKERS = {"VET": VET, "ROOKIE": ROOKIE}
+
+# Character art: branding/carveteran/faces/<name>_<emotion>.png, transparent.
+FACE_DIR = ROOT / "branding" / "carveteran" / "faces"
+# Fraction of frame width the character occupies. Big enough to read the
+# expression on a phone, small enough to leave the captions alone.
+FACE_SCALE = 0.42
 
 GAP_MS = 180          # beat between lines so it reads as a conversation
 
@@ -55,6 +76,7 @@ END_CTA_LINE = "Want to learn more? Hit that subscribe button."
 class Line:
     speaker: str
     text: str
+    emotion: str = ""       # which face to show; falls back to the default
 
 
 def write_episode(topic: str = "", episode: int = 1, api_key: str | None = None) -> dict:
@@ -67,10 +89,10 @@ def write_episode(topic: str = "", episode: int = 1, api_key: str | None = None)
 about cars. The channel teaches everyday drivers things that save them money.
 
 CHARACTERS (use these exact speaker tags):
-- VET: an old, worn-out muscle car. Decades on the road, seen every scam, dry
-  and blunt but never mean. He is the one who KNOWS things.
-- ROOKIE: a brand-new car, eager and a bit naive. He asks the questions a real
-  person would actually ask -- including the slightly dumb ones.
+- VET, called Rusty: an old, worn-out muscle car. Decades on the road, seen
+  every scam, dry and blunt but never mean. He is the one who KNOWS things.
+- ROOKIE, called Sparky: a brand-new compact car, eager and a bit naive. He asks
+  the questions a real person would actually ask -- including the dumb ones.
 
 TOPIC: {subject}
 
@@ -88,10 +110,21 @@ RULES:
 - Keep it PG. Dry humour, not insults.
 - Correct grammar and punctuation -- this is displayed on screen as captions.
 
+EXPRESSIONS -- every line also carries the face that character pulls while
+saying it. This is what makes the characters feel alive, so pick the one that
+actually fits the line rather than defaulting.
+- VET (Rusty) may use: deadpan (flat, unimpressed -- his default),
+  smug (he is about to reveal the catch), eyeroll (the industry has done
+  something stupid again), explaining (delivering the actual information).
+- ROOKIE (Sparky) may use: happy (his default), question (he is ASKING --
+  use this for any line ending in a question mark), shocked (he just heard a
+  number he did not like), delighted (he just learned something great).
+
 Return ONLY JSON, no other text:
 {{"title": "<scroll-stopping title, under 80 chars, curiosity-driven>",
   "topic": "<3-5 word subject label>",
-  "lines": [{{"speaker": "ROOKIE", "text": "..."}}, {{"speaker": "VET", "text": "..."}}]}}"""
+  "lines": [{{"speaker": "ROOKIE", "text": "...", "emotion": "question"}},
+            {{"speaker": "VET", "text": "...", "emotion": "smug"}}]}}"""
 
     r = client.messages.create(model="claude-sonnet-5", max_tokens=1200,
                                thinking={"type": "disabled"},
@@ -141,6 +174,7 @@ def build_audio(lines: list[Line], stem: str) -> tuple[Path, list[dict]]:
                     "anullsrc=r=24000:cl=mono", "-t", f"{GAP_MS/1000}",
                     "-q:a", "9", str(silence)], capture_output=True)
 
+    spans = []          # (speaker, emotion, start_ms, end_ms) -- drives the faces
     for i, ln in enumerate(lines):
         p = OUT / f"_{stem}_{i:02d}.mp3"
         words = asyncio.run(_speak(ln.text, SPEAKERS[ln.speaker], p))
@@ -148,7 +182,13 @@ def build_audio(lines: list[Line], stem: str) -> tuple[Path, list[dict]]:
             all_words.append({"word": w["word"],
                               "start_ms": w["start_ms"] + offset,
                               "end_ms": w["end_ms"] + offset})
-        offset += _duration_ms(p) + GAP_MS
+        dur = _duration_ms(p)
+        spk = SPEAKERS[ln.speaker]
+        face = ln.emotion if ln.emotion in spk["faces"] else spk["default_face"]
+        # Hold the face through the trailing gap so the character does not blink
+        # out between lines -- it should feel like they are waiting their turn.
+        spans.append((ln.speaker, face, offset, offset + dur + GAP_MS))
+        offset += dur + GAP_MS
         parts += [p, silence]
 
     listf = OUT / f"_{stem}_concat.txt"
@@ -160,26 +200,89 @@ def build_audio(lines: list[Line], stem: str) -> tuple[Path, list[dict]]:
     for p in set(parts):
         p.unlink(missing_ok=True)
     listf.unlink(missing_ok=True)
-    return voice, all_words
+    return voice, all_words, spans
+
+
+def overlay_faces(video: Path, spans: list, out: Path) -> Path:
+    """Composite the speaking character onto the finished video.
+
+    A second ffmpeg pass rather than a change to assemble_video_dynamic: that
+    function is shared with the story pipeline, and timed per-line overlays are
+    specific to dialogue. Keeping it here means the main channel cannot break
+    because of this.
+
+    Each speaker keeps a FIXED side -- Rusty left, Sparky right -- so position
+    becomes a second cue for who is talking, on top of the voice and the face.
+    Returns the original video untouched if anything is missing or ffmpeg fails;
+    a missing PNG must not cost the whole render.
+    """
+    used = sorted({(sp, face) for sp, face, _, _ in spans})
+    paths = {}
+    for sp, face in used:
+        p = FACE_DIR / f"{SPEAKERS[sp]['name'].lower()}_{face}.png"
+        if not p.exists():
+            print(f"  (missing face {p.name} -- skipping the overlay pass)")
+            return video
+        paths[(sp, face)] = p
+    if not paths:
+        return video
+
+    idx = {k: i + 1 for i, k in enumerate(paths)}      # input 0 is the video
+    cmd = ["ffmpeg", "-y", "-v", "error", "-i", str(video)]
+    for k in paths:
+        cmd += ["-i", str(paths[k])]
+
+    # Scale each face once, then overlay it during each of its time ranges.
+    # Sized off config.RENDER_WIDTH rather than main_w: scale cannot reference
+    # the main input's dimensions, and this keeps it correct on the low-spec
+    # 720-wide profile as well as 1080.
+    fw = int(config.RENDER_WIDTH * FACE_SCALE)
+    fc = [f"[{i}:v]scale={fw}:-1[f{i}]" for i in idx.values()]
+    last, n = "0:v", 0
+    for (sp, face), i in idx.items():
+        ranges = [(a, b) for s, f, a, b in spans if s == sp and f == face]
+        enable = "+".join(f"between(t,{a/1000:.2f},{b/1000:.2f})" for a, b in ranges)
+        x = "40" if SPEAKERS[sp]["side"] == "left" else "main_w-overlay_w-40"
+        nxt = f"v{n}"
+        fc.append(f"[{last}][f{i}]overlay=x={x}:y=main_h-overlay_h-320:"
+                  f"enable='{enable}'[{nxt}]")
+        last, n = nxt, n + 1
+
+    cmd += ["-filter_complex", ";".join(fc), "-map", f"[{last}]", "-map", "0:a?",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+            "-pix_fmt", "yuv420p", "-c:a", "copy", str(out)]
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode != 0 or not out.exists():
+        print(f"  (face overlay failed, keeping the plain render: "
+              f"{r.stderr.strip().splitlines()[-1] if r.stderr.strip() else '?'})")
+        return video
+    return out
 
 
 def render(script: dict, footage: list[Path]) -> Path:
     from assemble import assemble_video_dynamic
 
-    lines = [Line(l["speaker"], l["text"]) for l in script["lines"]]
+    lines = [Line(l["speaker"], l["text"], l.get("emotion", "")) for l in script["lines"]]
     # VET delivers the closing subscribe ask -- he's the authority voice, so it
     # lands as an offer of more knowledge rather than a plea for a click.
     if END_CTA:
-        lines.append(Line("VET", END_CTA_LINE))
+        lines.append(Line("VET", END_CTA_LINE, "smug"))
     stem = re.sub(r"[^a-z0-9]+", "_", script["topic"].lower()).strip("_")[:40] or "episode"
     stem = f"car_{stem}"
 
-    voice, words = build_audio(lines, stem)
+    voice, words, spans = build_audio(lines, stem)
     ass = OUT / f"{stem}_captions.ass"
     build_caption_file(words, ass)
 
+    plain = OUT / f"{stem}_plain.mp4"
+    assemble_video_dynamic([str(f) for f in footage], str(voice), str(ass), str(plain))
+
     out = OUT / f"{stem}.mp4"
-    assemble_video_dynamic([str(f) for f in footage], str(voice), str(ass), str(out))
+    final = overlay_faces(plain, spans, out)
+    if final != out:                       # overlay skipped -- keep one artefact
+        plain.replace(out)
+    else:
+        plain.unlink(missing_ok=True)
     Path(OUT / f"{stem}_script.json").write_text(json.dumps(script, indent=2),
                                                  encoding="utf-8")
     return out
