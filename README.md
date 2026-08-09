@@ -110,8 +110,22 @@ You will need: an Anthropic API key, a Google Cloud OAuth client for YouTube,
 an Instagram Graph API token (professional account required), and a Discord bot
 token. Cloudflare R2 and TikTok credentials are optional.
 
-Drop background clips into `footage/` — in subfolders if you want per-video
-variety — then verify everything is wired:
+Background clips go in **that channel's own tree** — `footage/<account_id>/`,
+with a subfolder per themed set. Each video commits to one set for its whole run,
+so the look stays consistent within a video and varies between videos:
+
+```
+footage/parkourflux/{bright_biomes,night_1080,orbital_day}
+footage/carveteran/{gameplay,road}
+```
+
+A channel with its own tree cannot see anything outside it, so a new folder is
+opt-in rather than joining every channel's rotation by default. Folders starting
+with `_` are never drawn — that is where a clip goes when it is staged or
+withdrawn. `scripts/fetch_footage.py` pulls licence-clean clips from Pexels into
+one of these sets and records provenance per clip.
+
+Then verify everything is wired:
 
 ```bash
 venv/bin/python scripts/preflight.py     # 36 checks, incl. live token refresh
@@ -124,8 +138,16 @@ systemd).
 ## Notes
 
 Credentials are excluded from version control — the committed `.bat` files are
-`.template` versions with placeholders. Background footage is excluded too: it
-is third-party gameplay and not mine to redistribute.
+`.template` versions with placeholders.
+
+Background footage is excluded too, for two different reasons depending on which
+it is. The Minecraft clips are third-party gameplay and not mine to
+redistribute. The driving clips are either my own captures or licensed from
+Pexels for commercial use; those are left out for size, and each set carries a
+`CREDITS.md` naming the source of every file. Nothing in the pipeline uses
+footage scraped from someone else's stream — an early clip was, and it had a
+Twitch logo built into the map it was recorded on, which is why provenance is
+now recorded per clip rather than assumed.
 
 This is a working system rather than a packaged product, and it shows in
 places. The deployment guides and inline comments explain *why* decisions were

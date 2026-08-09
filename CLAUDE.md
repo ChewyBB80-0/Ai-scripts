@@ -1,8 +1,23 @@
 # Media Maker — Operating Instructions
 
-This project generates and posts short-form vertical videos (Minecraft
-parkour footage + narrated AI story + burned-in captions) to YouTube,
+This project generates and posts short-form vertical videos to YouTube,
 Instagram, and eventually TikTok.
+
+It runs **two channels**, and they make different things:
+
+| account | makes | pipeline |
+|---|---|---|
+| `parkourflux` | narrated AI story over Minecraft parkour footage | `bot.py` story path |
+| `carveteran` | two-voice car-tips dialogue over driving footage | `dialogue_video.py` |
+
+`bot.run_once()` dispatches on the account's `content_type`, so one command
+serves both and every per-account setting (footage tree, daily target, platform
+flags, tags, post log) comes from `accounts.json`. Adding a third channel is a
+config change, not a code change.
+
+**Never assume one channel.** Anything that reads `output/channel_stats.json`
+or `output/post_log.csv` directly is reading the FIRST channel only — those are
+`parkourflux`'s files because its `out_dir` is `output`. Use `acc.out_dir`.
 
 ## Your job when this runs on a schedule
 
@@ -17,9 +32,11 @@ it logs rather than reimplement this logic:
 3. Generates a story (via Claude if `ANTHROPIC_API_KEY` is set, otherwise
    from the local bank in `stories/`).
 4. Runs the full pipeline to produce a finished video.
-5. **Review mode (default: ON in `config.py`).** Saves to
-   `output/pending_review/` and stops -- nothing posts automatically.
-   Use `python3 approve.py` to list pending videos, and
+5. **Review mode (`config.REVIEW_MODE`, currently OFF).** When ON, saves to
+   `output/pending_review/` and stops -- nothing posts. It is off in normal
+   operation: both channels post automatically on the hourly timer. Turn it on
+   (or pass `--dry-render`, which sets it for one run) to render without
+   publishing. Use `python3 approve.py` to list pending videos, and
    `python3 approve.py --post <filename> --title "..."` to post one.
 6. **Once `REVIEW_MODE = False`:** uploads directly via `youtube_upload.py`
    at the privacy level set in `config.PRIVACY_STATUS`, and logs every
