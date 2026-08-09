@@ -721,6 +721,100 @@ function renderDetail(){
 function esc(x){return String(x==null?'':x).replace(/[&<>"']/g,c=>(
  {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 
+// ---- channel comparison ----
+// Only meaningful with more than one channel in scope, so it hides itself
+// otherwise rather than showing a table with one row.
+//
+// Median as well as mean: this channel's first post did 1,107 views and its
+// second did 187, so an average of the two describes neither. The median says
+// what a typical post does; "best" says what the ceiling looked like once.
+function median(a){if(!a.length)return 0;const s=[...a].sort((x,y)=>x-y),m=s.length>>1;
+ return s.length%2?s[m]:Math.round((s[m-1]+s[m])/2);}
+function renderCompare(){
+ const card=$('cmpCard');
+ const list=CUR==='all'?ACCS:ACCS.filter(a=>a.id===CUR);
+ if(list.length<2){card.style.display='none';return}
+ card.style.display='';
+ card.querySelector('.ct').textContent='Channel comparison';
+ const cards=list.map((a,i)=>{
+  const igv=(a.ig.media||[]).map(m=>m.views||0);
+  const ytv=(a.videos||[]).filter(v=>!v.publishAt&&(!v.privacy||v.privacy==='public'))
+                          .map(v=>v.views||0);
+  const all=igv.concat(ytv);
+  const views=all.reduce((n,x)=>n+x,0);
+  const likes=a.totalLikes+(a.ig.media||[]).reduce((n,m)=>n+(m.likes||0),0);
+  const eng=views?((likes/views)*100):0;
+  const off=a.enabled===false?'<span class="off">autoposter off</span>':'';
+  return `<div class="cmpc"><h4>${esc(a.name)}</h4><div class="h">${esc(a.handle)} ${off}</div>
+   <div class="cmpr"><span>Posts</span><span>${all.length}</span></div>
+   <div class="cmpr"><span>Total views</span><span>${fmt(views)}</span></div>
+   <div class="cmpr"><span>Median post</span><span>${fmt(median(all))}</span></div>
+   <div class="cmpr"><span>Best post</span><span>${fmt(Math.max(0,...all))}</span></div>
+   <div class="cmpr"><span>Engagement</span><span>${eng.toFixed(2)}%</span></div>
+   <div class="cmpr"><span>IG share</span><span>${views?Math.round(igv.reduce((n,x)=>n+x,0)/views*100):0}%</span></div>
+  </div>`;
+ }).join('');
+ $('cmpBody').innerHTML='<div class="cmp">'+cards+'</div>'+
+  '<div class="note" style="margin-top:10px">Median is the typical post; best is the ceiling. '+
+  'When those are far apart the average describes neither.</div>';
+}
+
+// ---- views by age ----
+// Every post's curve replotted against HOURS SINCE IT WAS PUBLISHED, not wall
+// clock. Comparing a 2h-old post to a 10h-old one on a calendar axis makes the
+// new one look like a failure; this is the axis on which they are comparable.
+let ageMetric='Instagram';
+function renderAge(){
+ const H=ALL.postHistory||{};
+ const ids=CUR==='all'?null:CUR;
+ const series=[];
+ Object.entries(H).forEach(([k,r])=>{
+  if(r.plat!==ageMetric)return;
+  if(ids&&r.ch!==ids)return;
+  if(!r.pub)return;
+  const t0=new Date(r.pub).getTime();
+  const pts=r.pts.map(([t,v])=>({x:(new Date(t).getTime()-t0)/3600000,y:v}))
+                 .filter(p=>p.x>=0&&p.x<=72);
+  if(pts.length)series.push({label:r.title||k,pts:pts,ch:r.ch});
+ });
+ // newest first, cap at 6 so the chart stays readable
+ series.sort((a,b)=>b.pts[0].x-a.pts[0].x);
+ const show=series.slice(0,6);
+ const el=$('cAge');
+ if(!show.length||show.every(s=>s.pts.length<2)){
+  el.innerHTML='<div class="note">Collecting. Each post gets a curve from the next hourly run onward '+
+   '&mdash; this was not recorded before now, so nothing can be backfilled.</div>';
+  $('ageNote').textContent=show.length?`${show.length} post(s) tracked, none with two readings yet.`:'';
+  return}
+ multiLine(el,show);
+ $('ageNote').textContent='Hours since publish on the x-axis, so posts of different ages line up. '+
+  'Up to 6 most recent '+ageMetric+' posts in scope.';
+}
+function multiLine(el,series){
+ const W=820,H=210,pl=46,pb=26,pt=12;
+ const xs=series.flatMap(s=>s.pts.map(p=>p.x)),ys=series.flatMap(s=>s.pts.map(p=>p.y));
+ const x1=Math.max(...xs,1),ymax=Math.max(...ys,1)*1.15;
+ const X=v=>pl+(W-pl-16)*(v/x1),Y=v=>pt+(H-pt-pb)*(1-v/ymax);
+ let g='';
+ for(let i=1;i<=4;i++){const y=pt+(H-pt-pb)*i/5;
+  g+=`<line x1="${pl}" y1="${y}" x2="${W-12}" y2="${y}" stroke="var(--border)" stroke-dasharray="2 5"/>`+
+     `<text x="${pl-8}" y="${y+4}" text-anchor="end" font-size="10">${fmt(ymax*(1-i/5))}</text>`}
+ for(let h=0;h<=x1;h+=Math.max(1,Math.ceil(x1/6))){
+  g+=`<text x="${X(h)}" y="${H-8}" text-anchor="middle" font-size="10" fill="var(--muted)">${Math.round(h)}h</text>`}
+ const cols=['var(--mint)','var(--violet)','var(--amber)','var(--pink)','var(--red)','#7FD1FF'];
+ let paths='',dots='',key='';
+ series.forEach((s,i)=>{
+  const c=cols[i%cols.length];
+  let d='';s.pts.forEach((p,j)=>d+=(j?'L':'M')+X(p.x).toFixed(1)+' '+Y(p.y).toFixed(1));
+  paths+=`<path d="${d}" fill="none" stroke="${c}" stroke-width="2.2" stroke-linejoin="round"/>`;
+  const last=s.pts[s.pts.length-1];
+  dots+=`<circle cx="${X(last.x)}" cy="${Y(last.y)}" r="4" fill="${c}"/>`;
+  key+=`<span style="color:${c};margin-right:14px;white-space:nowrap">&#9679; ${esc(s.label).slice(0,34)}</span>`;
+ });
+ el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="min-width:560px">${g}${paths}${dots}</svg>`+
+   `<div style="font-size:11px;margin-top:6px;line-height:1.7">${key}</div>`;
+}
+
 // ---- compute ----
 function render(){
  const igt=IG.totalViews||0,ttt=ttTotal();const allViews=D.totalViews+igt+ttt;
@@ -732,7 +826,7 @@ function render(){
  $('mViews').textContent=fmt(allViews);$('mLikes').textContent=fmt(allLikes);$('mCmts').textContent=fmt(allCmts);
  $('mShares').textContent=fmt(allShares);$('mEng').textContent=eng.toFixed(2)+'%';
  renderLibrary();
- renderThumbs();drawViewsChart();renderDetail();
+ renderThumbs();drawViewsChart();renderCompare();renderAge();renderDetail();
  line($('cSubs'),D.history.map(h=>({x:new Date(h.t).getTime(),y:subsValue(h)})),'var(--amber)');
  // most-viewed across platforms
  let top=D.videos[0]?{title:D.videos[0].title,views:D.videos[0].views,url:'https://youtube.com/watch?v='+D.videos[0].videoId,platform:'YouTube'}:null;
@@ -790,6 +884,7 @@ buildChanSel();applyScope();renderHeader();render();
 // chart Delta/Cumulative toggle + time range
 $('platSel').onchange=e=>{chartPlat=e.target.value;drawViewsChart()};
 $('dtPlat').onchange=e=>{dtPlat=e.target.value;renderDetail()};
+$('ageMetric').onchange=e=>{ageMetric=e.target.value;renderAge()};
 $('tgCumul').onclick=()=>{chartMode='cumul';$('tgCumul').classList.add('on');$('tgDelta').classList.remove('on');drawViewsChart()};
 $('tgDelta').onclick=()=>{chartMode='delta';$('tgDelta').classList.add('on');$('tgCumul').classList.remove('on');drawViewsChart()};
 $('rangeSel').onchange=()=>{chartRange=+$('rangeSel').value;drawViewsChart()};
