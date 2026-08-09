@@ -26,6 +26,12 @@ os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 _VENV_PY = ROOT / "venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 PY = str(_VENV_PY) if _VENV_PY.exists() else sys.executable
 STEPS = [
+    # Keep Instagram tokens alive. A no-op on almost every run -- it only acts
+    # once a token is a week old. Runs BEFORE bot.py so a posting run never
+    # starts on a token that was about to lapse. YouTube and TikTok refresh
+    # themselves inside their own clients; Instagram had nothing, which made it
+    # the one platform with a scheduled outage.
+    ["ig_token.py"],
     ["bot.py"],
     ["comment_replies.py"],          # no-op until ENABLE_COMMENT_REPLIES=True
     ["coverage_check.py"],           # report-only: flags half-posted videos

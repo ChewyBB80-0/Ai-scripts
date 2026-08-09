@@ -60,6 +60,17 @@ class Account:
 
     @property
     def ig_token(self):
+        # A refreshed token in output/ig_tokens.json wins over the hand-pasted
+        # one in .env -- see ig_token.py for why refreshes are kept out of .env.
+        # Imported lazily and defensively: a missing or broken store must fall
+        # back to .env rather than take posting down with it.
+        try:
+            import ig_token
+            t = ig_token.current(self.id, self._DEFAULT_ID)
+            if t:
+                return t
+        except Exception:
+            pass
         own = os.environ.get(f"IG_ACCESS_TOKEN_{self.id.upper()}")
         if own or self.id != self._DEFAULT_ID:
             return own
