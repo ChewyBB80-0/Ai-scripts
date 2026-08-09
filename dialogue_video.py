@@ -46,16 +46,16 @@ OUT = ROOT / "output" / "car_channel"
 # +/-25Hz. They still blurred together -- a shared timbre survives pitch
 # shifting. Changing the ACCENT is the lever that actually works: you can tell
 # them apart inside one word.
-# Rusty's rate was -8%, which dragged: the slower the delivery, the longer every
-# comma and full stop is held, and his lines carry the most punctuation. The
-# accent split and the -18Hz do the "older, heavier" work on their own, so the
-# rate no longer has to.
+# Rusty's rate has come up twice, -8% then -3% and now positive: the slower the
+# delivery, the longer every comma and full stop is held, and his lines carry the
+# most punctuation of the two. The accent split and the -18Hz do the "older,
+# heavier" work on their own, so the rate does not have to.
 VET = {"name": "Rusty", "voice": "en-US-ChristopherNeural",
-       "rate": "-3%", "pitch": "-18Hz", "side": "left",
+       "rate": "+5%", "pitch": "-18Hz", "side": "left",
        "faces": ["deadpan", "smug", "eyeroll", "explaining"],
        "default_face": "deadpan"}
 ROOKIE = {"name": "Sparky", "voice": "en-GB-RyanNeural",
-          "rate": "+10%", "pitch": "+30Hz", "side": "right",
+          "rate": "+12%", "pitch": "+30Hz", "side": "right",
           "faces": ["happy", "question", "shocked", "delighted"],
           "default_face": "happy"}
 SPEAKERS = {"VET": VET, "ROOKIE": ROOKIE}
@@ -70,7 +70,17 @@ SLIDE_S = 0.22        # how long a character takes to slide in when their turn s
 MARGIN = 30           # gap from the frame edge
 BOTTOM_PAD = 160      # gap from the bottom; captions now sit centred, above this
 
-GAP_MS = 180          # beat between lines so it reads as a conversation
+# Beat between lines. Was 180ms; a big part of "it sounds slow" was not the
+# voices at all but the dead air between turns, and tightening this speeds the
+# whole thing up without pushing either voice into sounding rushed.
+GAP_MS = 120
+
+# How long one background clip is held. assemble_video_dynamic defaults to
+# 3.5-5.5s, which is almost exactly the length of one spoken line, so the
+# background appeared to cut every time the speaker changed and the two edits
+# fought each other. Holding a clip across two or three turns decouples them, so
+# the character swap is the thing that reads as the change.
+CUT_MIN, CUT_MAX = 8.0, 13.0
 
 # Closing subscribe ask, spoken by VET after the last line. An explainer channel
 # earns subscribers differently from a story channel: a story is finished when
@@ -348,6 +358,7 @@ def render(script: dict, footage: list[Path]) -> Path:
 
     plain = OUT / f"{stem}_plain.mp4"
     assemble_video_dynamic([str(f) for f in footage], str(voice), str(ass), str(plain),
+                           cut_min=CUT_MIN, cut_max=CUT_MAX,
                            hook_card_path=card, hook_card_seconds=card_seconds)
 
     out = OUT / f"{stem}.mp4"
