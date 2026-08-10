@@ -127,7 +127,7 @@ def split_story_into_parts(story: dict, max_words: int = 165, single_max: int = 
     return parts
 
 
-def _format_txt() -> str:
+def _format_txt(genre: str | None = None) -> str:
     """Current format research, for the story writer (issue #7, Gap 3).
 
     trends.py has always researched "what the platforms are favouring" and only
@@ -142,10 +142,15 @@ def _format_txt() -> str:
     It never carries length or cadence advice: the prompt that produces it is
     told not to give any, because length is set by the target spec in this file
     and web advice must not quietly override it.
+
+    Scoped by genre (issue #7, Gap 4): the notes are merged from `broad` plus
+    the entry for THIS story's genre, because the genres do not want the same
+    thing -- a revenge story earns attention by promising a payoff, a creepy one
+    by withholding it.
     """
     try:
         from trends import format_notes
-        f = format_notes()
+        f = format_notes(genre)
     except Exception:
         return ""
     lines = []
@@ -450,7 +455,7 @@ tight, complete short story beats a padded long one -- a 30-second story can hit
 just as hard as a 60-second one. (Ignore this length only for a rare 300-450
 word multi-part saga when the material is genuinely exceptional, ~1 in 5 at
 most; sagas auto-split into ~55s parts.)
-{_hint_txt(topic_hint)}{_format_txt()}
+{_hint_txt(topic_hint)}{_format_txt(genre_key)}
 {_niche_txt}WHAT ACTUALLY GOES VIRAL ON THIS CHANNEL -- both breakout videos shared a
 STRUCTURE, not just a subject. Aim for one of these shapes (or something with
 the same emotional weight):

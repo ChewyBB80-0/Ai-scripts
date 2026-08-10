@@ -42,14 +42,27 @@ Then respond with ONLY this JSON (no other text):
   "revenge": "...", "confession": "...", "creepy": "..."},
  "tips": ["3-5 short current best-practice notes for caption writing"],
  "format": {
-   "hook": ["2-3 notes on what makes the FIRST 1-2 SECONDS hold a viewer right now"],
-   "pacing": ["2-3 notes on pacing/structure that keep people watching to the end"],
-   "algorithm": ["2-3 notes on what the platforms are currently favouring"]}}
+   "broad": {"hook": ["2-3 notes"], "pacing": ["2-3 notes"],
+             "algorithm": ["2-3 notes on what the platforms currently favour"]},
+   "aitah": {"hook": ["1-2 notes SPECIFIC to moral-dilemma stories"],
+             "pacing": ["1-2 notes"]},
+   "revenge": {"hook": ["1-2 notes SPECIFIC to payback stories"],
+               "pacing": ["1-2 notes"]},
+   "confession": {"hook": ["1-2 notes SPECIFIC to confessions"],
+                  "pacing": ["1-2 notes"]},
+   "creepy": {"hook": ["1-2 notes SPECIFIC to unsettling stories"],
+              "pacing": ["1-2 notes"]}}}
 
 For "format", report only things a WRITER can act on -- how a story opens, how
 tension is paced, what makes someone stay. Do NOT give advice about video
 length, posting frequency, resolution or editing software: those are set
-elsewhere in this pipeline and are not yours to change."""
+elsewhere in this pipeline and are not yours to change.
+
+The genres want DIFFERENT things and the per-genre notes must reflect that, not
+restate the broad ones: a revenge story earns attention by promising a payoff,
+a creepy one by withholding; a confession opens on the admission, a moral
+dilemma on the accusation. Put anything that applies to all four in "broad"
+and keep the genre entries genuinely specific."""
 
 
 def load_trends() -> dict | None:
@@ -59,16 +72,31 @@ def load_trends() -> dict | None:
         return None
 
 
-def format_notes() -> dict:
-    """The format half of the research, for story generation.
+def format_notes(genre: str | None = None) -> dict:
+    """The format half of the research, merged for one genre.
 
-    Returns {} when absent -- a trends.json written before this key existed is
-    normal and must not change how stories are written until the next refresh
-    populates it.
+    Genres do not want the same things -- a revenge story earns attention by
+    promising a payoff, a creepy one by withholding it -- so the research is
+    scoped the same way `tags` already is, with `broad` for what applies to all
+    of them (issue #7, Gap 4).
+
+    Returns {} when absent: a trends.json written before this key existed must
+    not change how stories are written until the next refresh populates it.
+    Also accepts the earlier FLAT shape ({hook, pacing, algorithm}) so the file
+    written between Gap 3 and Gap 4 keeps working instead of silently going
+    quiet.
     """
     t = load_trends() or {}
     f = t.get("format")
-    return f if isinstance(f, dict) else {}
+    if not isinstance(f, dict):
+        return {}
+    # flat = the pre-per-genre shape; treat the whole thing as broad
+    if any(isinstance(v, list) for v in f.values()):
+        return f
+    out = dict(f.get("broad") or {})
+    for k, v in (f.get(genre) or {}).items() if genre else []:
+        out[k] = list(out.get(k, [])) + list(v or [])
+    return out
 
 
 def trends_age_days() -> float:
