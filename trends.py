@@ -21,6 +21,12 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Loads .env. This module is normally imported by social_caption, which runs
+# after config is already loaded -- so the missing key only showed up running
+# `python trends.py` by hand, where it failed with an authentication error that
+# pointed at the SDK rather than at an unloaded environment.
+import config  # noqa: F401
+
 TRENDS_FILE = Path(__file__).parent / "output" / "trends.json"
 MAX_AGE_DAYS = 7
 
