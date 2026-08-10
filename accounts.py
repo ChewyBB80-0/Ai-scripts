@@ -33,6 +33,14 @@ class Account:
     footage_dir: str = "footage"
     logo: str = "branding/logo.png"
     daily_target: int = 1
+    # Minimum hours between posts on this channel. 0 = derive it from
+    # daily_target, which is almost always what you want.
+    #
+    # Without a gap the only rule is "have we hit today's target", so the second
+    # post goes out on the very next hourly run -- both of ParkourFlux's landed
+    # around 03:05 and 04:02, an hour apart and overnight. Two posts that close
+    # compete with each other for the same audience and waste the second slot.
+    min_gap_hours: float = 0
     ig_enabled: bool = True
     # What this channel makes. bot.py's whole pipeline is Reddit-style narrated
     # STORIES; the car channel is two-voice dialogue from dialogue_video.py and
@@ -134,6 +142,20 @@ def get_account(acc_id: str) -> Account:
         if a.id == acc_id:
             return a
     raise KeyError(f"no account '{acc_id}' in accounts.json")
+
+
+def post_gap_hours(acc: Account) -> float:
+    """How long this channel must wait between posts.
+
+    Derived from daily_target unless set explicitly. 20 rather than 24 leaves
+    slack: the pipeline only wakes hourly, and a gap of exactly 24/target drifts
+    later every day until a post falls off the end of the quota day entirely.
+    """
+    if acc.min_gap_hours:
+        return float(acc.min_gap_hours)
+    if acc.daily_target and acc.daily_target > 1:
+        return 20.0 / acc.daily_target
+    return 0.0
 
 
 def footage_root(acc: Account) -> Path:

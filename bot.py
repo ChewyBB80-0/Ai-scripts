@@ -169,6 +169,34 @@ def todays_story_count() -> int:
     return len(stories)
 
 
+def _too_soon(acc: Account) -> float:
+    """Hours still to wait before this channel may post again, else 0.
+
+    Reads the newest post of ANY kind from the account's log -- a YouTube upload
+    and its Instagram cross-post are the same event, so the gap is measured from
+    whichever landed last rather than counting them as two.
+    """
+    from accounts import post_gap_hours
+    gap = post_gap_hours(acc)
+    if gap <= 0 or not POST_LOG.exists():
+        return 0.0
+    newest = None
+    with open(POST_LOG) as f:
+        for row in csv.reader(f):
+            if len(row) < 4 or row[3] not in USED_STATUSES:
+                continue
+            try:
+                ts = datetime.fromisoformat(row[0]).astimezone(_PT)
+            except ValueError:
+                continue
+            if newest is None or ts > newest:
+                newest = ts
+    if newest is None:
+        return 0.0
+    waited = (datetime.now(_PT) - newest).total_seconds() / 3600
+    return max(0.0, gap - waited)
+
+
 def _queue_add(items: list[dict]):
     QUEUE_FILE.parent.mkdir(parents=True, exist_ok=True)
     q = json.loads(QUEUE_FILE.read_text()) if QUEUE_FILE.exists() else []
@@ -576,6 +604,11 @@ def _run_dialogue(acc: Account, topic_hint: str = "", force: bool = False,
     if not force and todays_story_count() >= acc.daily_target:
         print(f"[{acc.id}] daily target reached ({acc.daily_target}); nothing to do.")
         return
+    if not force:
+        wait = _too_soon(acc)
+        if wait:
+            print(f"[{acc.id}] spacing: {wait:.1f}h until the next post is due.")
+            return
 
     clips = pick_background_set(acc, quiet=True)
     if not clips:
@@ -680,6 +713,13 @@ def run_once(background_dir: str | None = None, topic_hint: str = "",
             if todays_story_count() >= acc.daily_target:
                 print(f"Daily story target reached ({acc.daily_target}); "
                       f"no parts due -- nothing to do.")
+                return
+            # Spread the day's posts out. Without this the second one goes out
+            # on the very next hourly run, so two posts land an hour apart and
+            # compete for the same audience.
+            _wait = _too_soon(acc)
+            if _wait:
+                print(f"Spacing: {_wait:.1f}h until the next post is due.")
                 return
 
     # 1. Story -- generate fresh via Claude if ANTHROPIC_API_KEY is set,
