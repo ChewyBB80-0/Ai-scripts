@@ -13,7 +13,7 @@
     "yt_token": "token.json",
     "footage_dir": "footage",
     "logo": "branding/logo.png",
-    "daily_target": 2,
+    "daily_target": 1,
     "ig_enabled": true
   },
   {
@@ -27,7 +27,7 @@
     "yt_token": "token_carveteran.json",
     "footage_dir": "footage",
     "logo": "branding/logo_carveteran.png",
-    "daily_target": 1,
+    "daily_target": 2,
     "ig_enabled": true,
     "content_type": "dialogue",
     "yt_tags": [
