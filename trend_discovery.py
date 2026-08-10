@@ -4,24 +4,22 @@ Finds what's currently trending to feed into story_bank.generate_story_via_claud
 as a topic hint, so the bot isn't just picking random themes -- it's leaning
 into what's actually getting attention right now.
 
-Two independent sources:
-  - Google Trends (via pytrends -- unofficial but widely used, free, no key needed)
-  - YouTube trending videos (via your existing YouTube API key -- read-only,
-    doesn't need the OAuth flow youtube_upload.py uses, just an API key)
+ONE source: YouTube trending videos, via a YouTube Data API key (read-only, not
+the OAuth flow youtube_upload.py uses).
+
+Google Trends was the other source and has been REMOVED. pytrends is an
+unofficial client and Google's endpoint now returns 404 for it -- not flaky,
+gone. It failed inside a try/except that printed "non-fatal" and returned an
+empty string, which bot.py could not tell apart from "no suggestion today". The
+result: every video for an unknown stretch was generated with no hint at all,
+0 of 6 attributed videos carry one, and nothing ever said so. A silent fallback
+made a dead feature invisible.
+
+So this module now reports its own state rather than degrading quietly, and
+preflight checks whether a source is configured at all.
 
 Requires real internet access -- won't run inside the build sandbox.
 """
-
-import random
-
-
-def get_google_trends(region: str = "united_states", max_results: int = 10) -> list[str]:
-    """Realtime Google Trends search terms for a region."""
-    from pytrends.request import TrendReq
-
-    pytrends = TrendReq(hl="en-US", tz=360)
-    df = pytrends.trending_searches(pn=region)
-    return df[0].tolist()[:max_results]
 
 
 def get_youtube_trending(api_key: str, region_code: str = "US", max_results: int = 10) -> list[str]:
@@ -43,26 +41,27 @@ def get_youtube_trending(api_key: str, region_code: str = "US", max_results: int
 
 
 def suggest_topic_hint(youtube_api_key: str | None = None) -> str:
-    """
-    Pulls from whatever sources are available and returns one topic/hook
-    string to pass as --topic to bot.py / generate_story_via_claude().
-    Falls back to "" (no hint -> generic story) if both sources fail --
-    never crashes the pipeline over a trend-lookup hiccup.
-    """
-    candidates: list[str] = []
+    """One trending topic string, or "" if no source is available.
 
+    Returns "" in two very different situations -- no source configured, and a
+    source that returned nothing -- so both are PRINTED with which one it was.
+    Callers still treat "" as "no hint", but the reason is no longer invisible.
+    """
+    import random as _r
+
+    if not youtube_api_key:
+        print("  (no trend hint: YOUTUBE_API_KEY is not set, so the only "
+              "remaining source is switched off -- see preflight)")
+        return ""
     try:
-        candidates += get_google_trends()
+        candidates = get_youtube_trending(youtube_api_key)
     except Exception as e:
-        print(f"Google Trends lookup failed (non-fatal): {e}")
-
-    if youtube_api_key:
-        try:
-            candidates += get_youtube_trending(youtube_api_key)
-        except Exception as e:
-            print(f"YouTube trending lookup failed (non-fatal): {e}")
-
-    return random.choice(candidates) if candidates else ""
+        print(f"  (no trend hint: YouTube trending lookup failed -- {e})")
+        return ""
+    if not candidates:
+        print("  (no trend hint: YouTube trending returned nothing)")
+        return ""
+    return _r.choice(candidates)
 
 
 if __name__ == "__main__":

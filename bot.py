@@ -718,8 +718,10 @@ def run_once(background_dir: str | None = None, topic_hint: str = "",
         # Fall back to fully AI-generated.
         if story is None:
             if not topic_hint:
-                # Trend discovery (pytrends) is flaky -- a failure must not kill
-                # the run; a missing hint just means Claude picks its own angle.
+                # A missing hint just means Claude picks its own angle, so this
+                # must never kill the run. trend_discovery now PRINTS why it
+                # returned nothing -- it used to fail silently, and that hid a
+                # dead source for weeks.
                 try:
                     from trend_discovery import suggest_topic_hint
                     topic_hint = suggest_topic_hint(youtube_api_key=os.environ.get("YOUTUBE_API_KEY"))

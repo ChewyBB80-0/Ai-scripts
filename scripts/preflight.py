@@ -145,6 +145,19 @@ check("footage/ clips", PASS if clips else FAIL,
                                   if _sets else " (flat pool)"))
       if clips else "EMPTY -- every render will fail")
 
+# Trend hints degrade to "no hint", which is a perfectly valid state -- so a
+# switched-off source looks exactly like a working one with nothing to suggest.
+# That hid a dead Google Trends dependency for weeks (0 of 6 attributed videos
+# carried a hint, and nothing said so). WARN, not FAIL: generation works fine
+# without it, but the state should never again be invisible.
+_yt_key = os.environ.get("YOUTUBE_API_KEY")
+check("trend hints", PASS if _yt_key else WARN,
+      "YouTube trending source configured" if _yt_key else
+      "OFF -- YOUTUBE_API_KEY not set, so every story is generated with no "
+      "trend hint. Create an API key in the same Google Cloud project "
+      "(APIs & Services -> Credentials -> API Key) and add it to .env, or "
+      "accept that generation picks its own angles.")
+
 fonts = list((ROOT / "fonts").glob("*.ttf")) if (ROOT / "fonts").exists() else []
 check("fonts/", PASS if fonts else WARN,
       f"{len(fonts)} font(s)" if fonts else "missing -- captions fall back to system fonts")
