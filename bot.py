@@ -513,21 +513,45 @@ def _dialogue_caption(acc: Account, script: dict) -> str:
             f"{gift}\n\n{acc.ig_hashtags}")
 
 
-def _used_topics(limit: int = 40) -> list[str]:
+def _used_topics(acc: Account | None = None, limit: int = 40) -> list[str]:
     """Subjects this channel has already covered, newest last.
 
-    Read from the post log rather than the output folder: the log is what
-    actually went out, so a discarded render never blocks a topic.
+    TWO sources, because either alone leaves a hole.
+
+    The post log is what actually went out. But a dry-render never posts, so its
+    topic stayed invisible and could be picked again -- which happened: a topic
+    test-rendered by hand was chosen again by the autoposter hours later and
+    published. The generated script is on disk either way, so the rendered
+    episodes are read as well.
+
+    That makes a discarded render block its topic, which is the right trade: the
+    supply of car-maintenance subjects is effectively unlimited, and a near-
+    duplicate episode is far more costly than skipping one idea.
     """
-    if not POST_LOG.exists():
-        return []
     out = []
-    with open(POST_LOG) as f:
-        for row in csv.reader(f):
-            if len(row) >= 4 and row[3] in USED_STATUSES and row[1]:
-                t = row[1].removeprefix("car_").replace("_", " ")
-                if t not in out:
+    if POST_LOG.exists():
+        with open(POST_LOG) as f:
+            for row in csv.reader(f):
+                if len(row) >= 4 and row[3] in USED_STATUSES and row[1]:
+                    t = row[1].removeprefix("car_").replace("_", " ")
+                    if t not in out:
+                        out.append(t)
+    # Every render leaves <stem>_script.json next to the video, posted or not.
+    if acc is not None:
+        try:
+            for p in sorted(Path(acc.out_dir).glob("*_script.json"),
+                            key=lambda q: q.stat().st_mtime):
+                try:
+                    d = json.loads(p.read_text(encoding="utf-8"))
+                except Exception:
+                    continue
+                t = (d.get("topic") or "").strip().lower()
+                if not t:
+                    t = p.stem.removesuffix("_script").removeprefix("car_").replace("_", " ")
+                if t and t not in out:
                     out.append(t)
+        except Exception:
+            pass
     return out[-limit:]
 
 
@@ -560,7 +584,7 @@ def _run_dialogue(acc: Account, topic_hint: str = "", force: bool = False,
         return
     print(f"[{acc.id}] footage pool: {len(clips)} clip(s)")
 
-    avoid = _used_topics()
+    avoid = _used_topics(acc)
     script = dialogue_video.write_episode(topic=topic_hint, avoid=avoid)
     print(f"[{acc.id}] {script['title']}")
     path = dialogue_video.render(script, clips, out=out_dir)
