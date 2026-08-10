@@ -111,10 +111,22 @@ def refresh_trends() -> dict:
     import anthropic
     client = anthropic.Anthropic()
     r = client.messages.create(
-        model="claude-sonnet-5", max_tokens=2000,
+        # 2000 was not enough once `format` gained per-genre entries: the reply
+        # hit the ceiling mid-JSON. Web-search results share this budget, so it
+        # has to cover the research AND the answer.
+        model="claude-sonnet-5", max_tokens=8000,
         tools=[{"type": "web_search_20260209", "name": "web_search", "max_uses": 4}],
         messages=[{"role": "user", "content": _PROMPT}],
     )
+    # A truncated reply is the dangerous case, not an obviously broken one:
+    # the parse below takes everything between the first { and the LAST }, so a
+    # response cut off mid-object can still yield valid JSON with keys quietly
+    # missing. That is exactly what happened -- `format` came back flat, with no
+    # error anywhere, and the per-genre research was simply absent.
+    if r.stop_reason == "max_tokens":
+        raise ValueError(
+            "trend research hit max_tokens and was truncated -- refusing to "
+            "parse a partial answer. Raise max_tokens in refresh_trends().")
     # web-search responses interleave several text blocks -- join them and
     # take the outermost JSON object from the combined text.
     text = "\n".join(b.text for b in r.content if getattr(b, "type", "") == "text")
