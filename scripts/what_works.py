@@ -78,6 +78,27 @@ def _bucket(row: dict) -> dict:
     return out
 
 
+def _ids_by_stem(post_log: Path) -> dict[str, str]:
+    """{story stem -> videoId} from the post log.
+
+    The join has to route through here. There are three different names for the
+    same video: video_attrs keys on the story STEM it rendered
+    ("the_referee_swapped_my_run"), YouTube stores the human TITLE ("My best
+    friend submitted my parkour run to..."), and only post_log.csv holds both
+    the stem and the videoId. Matching attrs to YouTube on title directly finds
+    nothing -- it silently joined 0 of 37 videos and read as "not enough data".
+    """
+    import csv as _csv
+    out = {}
+    if not post_log.exists():
+        return out
+    with open(post_log) as f:
+        for row in _csv.reader(f):
+            if len(row) >= 4 and row[3] in ("posted", "posted_manual", "scheduled") and row[2]:
+                out.setdefault(row[1].removesuffix(".mp4"), row[2])
+    return out
+
+
 def _perf(days: int) -> dict[str, dict]:
     """{videoId: {title, views, retention_pct, published}} for our own uploads.
 
@@ -143,18 +164,23 @@ def _stem(s: str) -> str:
     return str(s or "").removesuffix(".mp4").strip().lower()
 
 
-def analyse(days: int, min_bucket: int) -> str:
-    attrs = {_stem(k): _bucket(v) for k, v in _load_attrs().items()}
+def analyse(days: int, min_bucket: int,
+            post_log: str = "output/post_log.csv") -> str:
+    attrs = {k.removesuffix(".mp4"): _bucket(v) for k, v in _load_attrs().items()}
     if not attrs:
         return ("No attributed videos yet. video_attrs.jsonl is written at "
                 "render time; nothing published before it existed can be "
                 "recovered.")
 
-    perf = _perf(days)
+    perf = _perf(days)                      # keyed by videoId
+    ids = _ids_by_stem(ROOT / post_log)     # stem -> videoId
     joined = []
-    for p in perf.values():
-        a = attrs.get(_stem(p["title"]))
-        if a:
+    for stem, a in attrs.items():
+        vid = ids.get(stem)
+        if not vid:
+            continue                        # never posted, or Instagram-only
+        p = perf.get(vid)
+        if p:
             joined.append({**a, **p})
 
     lines = [f"WHAT WORKS — last {days} days",
@@ -221,8 +247,11 @@ def main():
                     help="only consider videos published in this window")
     ap.add_argument("--min", type=int, default=MIN_PER_BUCKET, dest="min_bucket",
                     help="minimum videos in a bucket before it is ranked")
+    ap.add_argument("--account", default="parkourflux",
+                    help="which channel's post log to join through")
     a = ap.parse_args()
-    print(analyse(a.days, a.min_bucket))
+    from accounts import get_account
+    print(analyse(a.days, a.min_bucket, get_account(a.account).post_log))
 
 
 if __name__ == "__main__":
