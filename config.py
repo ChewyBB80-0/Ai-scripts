@@ -283,6 +283,26 @@ HOOK_CARD_AVATAR = "branding/logo.png"
 PARKOUR_META_SHARE = 0.0
 
 # ---------------------------------------------------------------------------
+# Trend hint share (added 2026-08-09)
+# ---------------------------------------------------------------------------
+# What fraction of AI-generated stories get a trending topic hint. NOT all of
+# them, for two reasons.
+#
+# One: the signal is broad. YouTube's trending chart is global and returns K-pop
+# dance practices and film trailers -- most of it has no bearing on a channel
+# about landlords and in-laws. Applying that to every story would drag the whole
+# output off-niche.
+#
+# Two: a minority share creates the cohort issue #7's Gap 2 asks for. Hinted and
+# unhinted stories accumulate side by side, video_attrs records which is which,
+# and retention answers whether hints help. At 1.0 there is nothing to compare
+# against; at 0.0 the feature never runs. This is the same shape as
+# THEME_WEIGHTS leaving 0.30 unweighted.
+#
+# Start low. Raise it only if the hinted cohort actually retains better.
+TREND_HINT_SHARE = 0.25
+
+# ---------------------------------------------------------------------------
 # TikTok approval gate (added 2026-07-22)
 # ---------------------------------------------------------------------------
 # Every video the pipeline posts is also queued for TikTok; the Discord bot

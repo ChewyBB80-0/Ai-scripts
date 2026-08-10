@@ -22,7 +22,14 @@ Requires real internet access -- won't run inside the build sandbox.
 """
 
 
-def get_youtube_trending(api_key: str, region_code: str = "US", max_results: int = 10) -> list[str]:
+# People & Blogs is where storytelling, vlogs and personal-drama content sit.
+# The unfiltered chart is dominated by music, film trailers and esports, which
+# have nothing to do with a channel about landlords and in-laws.
+STORY_CATEGORY = "22"
+
+
+def get_youtube_trending(api_key: str, region_code: str = "US", max_results: int = 10,
+                         category_id: str | None = STORY_CATEGORY) -> list[str]:
     """
     Titles of currently trending YouTube videos. Needs an API key (not the
     OAuth flow) -- create one in the same Google Cloud project: APIs &
@@ -31,12 +38,11 @@ def get_youtube_trending(api_key: str, region_code: str = "US", max_results: int
     from googleapiclient.discovery import build
 
     youtube = build("youtube", "v3", developerKey=api_key)
-    response = youtube.videos().list(
-        part="snippet",
-        chart="mostPopular",
-        regionCode=region_code,
-        maxResults=max_results,
-    ).execute()
+    kw = dict(part="snippet", chart="mostPopular", regionCode=region_code,
+              maxResults=max_results)
+    if category_id:
+        kw["videoCategoryId"] = category_id
+    response = youtube.videos().list(**kw).execute()
     return [item["snippet"]["title"] for item in response.get("items", [])]
 
 

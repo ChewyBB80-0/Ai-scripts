@@ -127,6 +127,31 @@ def split_story_into_parts(story: dict, max_words: int = 165, single_max: int = 
     return parts
 
 
+def _hint_txt(topic_hint: str) -> str:
+    """How a trending topic enters the prompt.
+
+    It used to go in as `Topic hint: <title>`, which reads as an instruction --
+    so a chart entry like "Toxic Official Telugu Trailer" would have been taken
+    as the subject of a landlord-revenge story. The hint is a weak, broad signal
+    from a global chart; the channel's own proven shapes are the strong one.
+
+    So it is offered as PERMISSION, with an explicit licence to discard it. A
+    hint that connects to nothing should produce a normal story, not a contorted
+    one, and forcing a connection is worse than having no hint at all.
+    """
+    if not topic_hint:
+        return "Pick any compelling angle."
+    return (
+        f'SOFT SIGNAL -- something getting attention on YouTube right now:\n'
+        f'  "{topic_hint}"\n'
+        f'Use it ONLY if a natural, on-brand premise genuinely connects to the '
+        f'THEME or EMOTION behind it (betrayal, being underestimated, someone '
+        f'taking credit). If nothing connects, IGNORE IT COMPLETELY and pick '
+        f'your own angle -- that is the expected outcome most of the time. '
+        f'Never name the video, its creator, or anyone in it, and never write '
+        f'about the video itself.')
+
+
 def generate_story_via_claude(topic_hint: str = "", api_key: str | None = None,
                               genres: tuple | list | None = None,
                               avoid: list | None = None) -> dict:
@@ -392,7 +417,7 @@ tight, complete short story beats a padded long one -- a 30-second story can hit
 just as hard as a 60-second one. (Ignore this length only for a rare 300-450
 word multi-part saga when the material is genuinely exceptional, ~1 in 5 at
 most; sagas auto-split into ~55s parts.)
-{"Topic hint: " + topic_hint if topic_hint else "Pick any compelling angle."}
+{_hint_txt(topic_hint)}
 {_niche_txt}WHAT ACTUALLY GOES VIRAL ON THIS CHANNEL -- both breakout videos shared a
 STRUCTURE, not just a subject. Aim for one of these shapes (or something with
 the same emotional weight):

@@ -717,7 +717,12 @@ def run_once(background_dir: str | None = None, topic_hint: str = "",
                 log_error(f"Reddit source failed, using AI instead: {e}")
         # Fall back to fully AI-generated.
         if story is None:
-            if not topic_hint:
+            # Only a SHARE of runs get a hint, so hinted and unhinted stories
+            # accumulate side by side and retention can eventually say whether
+            # hints help (issue #7, Gap 2). Applying it every time would also
+            # drag every story toward a broad, mostly off-niche signal.
+            _share = getattr(config, "TREND_HINT_SHARE", 0.0)
+            if not topic_hint and random.random() < _share:
                 # A missing hint just means Claude picks its own angle, so this
                 # must never kill the run. trend_discovery now PRINTS why it
                 # returned nothing -- it used to fail silently, and that hid a
