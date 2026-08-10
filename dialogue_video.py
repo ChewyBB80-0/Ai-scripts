@@ -31,7 +31,12 @@ from captions import build_caption_file
 from ffmpeg_setup import ensure_ffmpeg
 
 ROOT = Path(__file__).parent
-OUT = ROOT / "output" / "car_channel"
+# The car channel's own out_dir, matching accounts.json. It used to be
+# output/car_channel/, which the bot never wrote to -- _run_dialogue passes the
+# account's out_dir -- so hand-run renders landed somewhere the pipeline could
+# not see. The topic dedup reads the account's directory, so six earlier
+# episodes were invisible to it and their subjects could be chosen again.
+OUT = ROOT / "output" / "carveteran"
 
 # --- the cast ---------------------------------------------------------------
 # Original characters, deliberately archetypes rather than identifiable models:
