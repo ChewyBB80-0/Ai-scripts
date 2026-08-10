@@ -160,10 +160,6 @@ def _perf(days: int) -> dict[str, dict]:
     return out
 
 
-def _stem(s: str) -> str:
-    return str(s or "").removesuffix(".mp4").strip().lower()
-
-
 def analyse(days: int, min_bucket: int,
             post_log: str = "output/post_log.csv") -> str:
     attrs = {k.removesuffix(".mp4"): _bucket(v) for k, v in _load_attrs().items()}

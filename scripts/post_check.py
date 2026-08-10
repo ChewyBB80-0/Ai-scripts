@@ -15,7 +15,6 @@ awake.
 
 import argparse
 import csv
-import json
 import subprocess
 import sys
 from datetime import datetime, timedelta
@@ -116,10 +115,13 @@ def main():
         cut = datetime.now() - timedelta(hours=a.hours)
         recent_err = []
         for ln in err.read_text(encoding="utf-8", errors="replace").splitlines():
+            # Lines look like "2026-08-10 03:09:15.554289: message". Split once
+            # on ": " so a timestamp is taken from the front and colons inside
+            # the message never confuse it.
+            stamp = ln.split(": ", 1)[0]
             try:
-                when = datetime.fromisoformat(ln.split(":")[0] + ":" + ln.split(":")[1]
-                                              + ":" + ln.split(":")[2][:6])
-            except Exception:
+                when = datetime.fromisoformat(stamp)
+            except ValueError:
                 continue
             if when >= cut:
                 recent_err.append(ln)
