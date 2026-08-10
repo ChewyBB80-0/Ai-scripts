@@ -127,6 +127,39 @@ def split_story_into_parts(story: dict, max_words: int = 165, single_max: int = 
     return parts
 
 
+def _format_txt() -> str:
+    """Current format research, for the story writer (issue #7, Gap 3).
+
+    trends.py has always researched "what the platforms are favouring" and only
+    ever handed the result to the caption writer, so findings about how a story
+    should OPEN and PACE were discarded. This routes that half here.
+
+    Two deliberate limits. It is advisory, not authoritative -- the channel's
+    own proven shapes below it are the stronger signal, and web guidance is
+    generic by nature. And it is silent when the key is absent, so a trends.json
+    written before this existed changes nothing until the next refresh.
+
+    It never carries length or cadence advice: the prompt that produces it is
+    told not to give any, because length is set by the target spec in this file
+    and web advice must not quietly override it.
+    """
+    try:
+        from trends import format_notes
+        f = format_notes()
+    except Exception:
+        return ""
+    lines = []
+    for key, label in (("hook", "Openings"), ("pacing", "Pacing"),
+                       ("algorithm", "Platforms currently favour")):
+        vals = [str(v).strip() for v in (f.get(key) or []) if str(v).strip()]
+        if vals:
+            lines.append(f"  {label}: " + "; ".join(vals[:3]))
+    if not lines:
+        return ""
+    return ("\nCURRENT FORMAT RESEARCH (advisory -- the proven shapes below "
+            "outrank this if they conflict):\n" + "\n".join(lines) + "\n")
+
+
 def _hint_txt(topic_hint: str) -> str:
     """How a trending topic enters the prompt.
 
@@ -417,7 +450,7 @@ tight, complete short story beats a padded long one -- a 30-second story can hit
 just as hard as a 60-second one. (Ignore this length only for a rare 300-450
 word multi-part saga when the material is genuinely exceptional, ~1 in 5 at
 most; sagas auto-split into ~55s parts.)
-{_hint_txt(topic_hint)}
+{_hint_txt(topic_hint)}{_format_txt()}
 {_niche_txt}WHAT ACTUALLY GOES VIRAL ON THIS CHANNEL -- both breakout videos shared a
 STRUCTURE, not just a subject. Aim for one of these shapes (or something with
 the same emotional weight):

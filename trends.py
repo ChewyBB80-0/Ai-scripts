@@ -1,9 +1,17 @@
 """
 trends.py
-Self-refreshing trend layer. refresh_trends() has Claude research CURRENT
-Reels/Shorts caption + hashtag trends via the API's server-side web_search
-tool and writes output/trends.json. The caption writer reads that file, so
-captions track what's working now instead of a static list.
+Self-refreshing trend layer. refresh_trends() has Claude research what is
+currently working on Reels/Shorts via the API's server-side web_search tool and
+writes output/trends.json.
+
+TWO consumers, deliberately separated (issue #7, Gap 3):
+  - `tags` / `keywords` / `tips`  -> social_caption.ai_caption  (captions)
+  - `format`                      -> story_bank                 (how stories
+                                                                 are written)
+
+The prompt always asked for "any algorithm changes", but the schema had nowhere
+to put them, so every format finding was researched and then dropped at parse
+time. The caption keys are unchanged, so captions behave exactly as before.
 
 Auto-refreshes when the file is older than MAX_AGE_DAYS (checked at caption
 time by social_caption.ai_caption). Costs pennies per refresh.
@@ -26,7 +34,16 @@ Then respond with ONLY this JSON (no other text):
   "creepy": [...], "broad": [2-3 tags]},
  "keywords": {"aitah": "one keyword-rich SEO line for captions",
   "revenge": "...", "confession": "...", "creepy": "..."},
- "tips": ["3-5 short current best-practice notes for caption writing"]}"""
+ "tips": ["3-5 short current best-practice notes for caption writing"],
+ "format": {
+   "hook": ["2-3 notes on what makes the FIRST 1-2 SECONDS hold a viewer right now"],
+   "pacing": ["2-3 notes on pacing/structure that keep people watching to the end"],
+   "algorithm": ["2-3 notes on what the platforms are currently favouring"]}}
+
+For "format", report only things a WRITER can act on -- how a story opens, how
+tension is paced, what makes someone stay. Do NOT give advice about video
+length, posting frequency, resolution or editing software: those are set
+elsewhere in this pipeline and are not yours to change."""
 
 
 def load_trends() -> dict | None:
@@ -34,6 +51,18 @@ def load_trends() -> dict | None:
         return json.loads(TRENDS_FILE.read_text(encoding="utf-8"))
     except Exception:
         return None
+
+
+def format_notes() -> dict:
+    """The format half of the research, for story generation.
+
+    Returns {} when absent -- a trends.json written before this key existed is
+    normal and must not change how stories are written until the next refresh
+    populates it.
+    """
+    t = load_trends() or {}
+    f = t.get("format")
+    return f if isinstance(f, dict) else {}
 
 
 def trends_age_days() -> float:
