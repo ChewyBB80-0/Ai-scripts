@@ -155,9 +155,15 @@ def _perf(days: int) -> dict[str, dict]:
             try:
                 r = ya.reports().query(
                     ids="channel==MINE", startDate=start, endDate=end,
-                    metrics="averageViewPercentage", filters=f"video=={vid}").execute()
+                    metrics="averageViewPercentage,views",
+                    filters=f"video=={vid}").execute()
                 rows = r.get("rows") or []
-                if rows and rows[0]:
+                # Analytics returns a zero ROW for a video it hasn't processed
+                # (24-72h lag), not an absent one, so `rows[0]` is truthy and
+                # 0.0 reads as real. Left alone this records every recent video
+                # as 0% retention and quietly drags every bucket average down.
+                # Its own view count is the tell -- see retention_report.
+                if rows and rows[0] and len(rows[0]) > 1 and rows[0][1]:
                     pct = float(rows[0][0])
                     if pct >= 100:
                         out[vid]["loops"] = True

@@ -127,20 +127,26 @@ def run(limit: int = 10):
         try:
             r = ya.reports().query(
                 ids="channel==MINE", startDate=start, endDate=end,
-                metrics="averageViewPercentage,averageViewDuration",
+                metrics="averageViewPercentage,averageViewDuration,views",
                 filters=f"video=={vid}").execute()
             got = r.get("rows") or []
         except Exception as e:
             print(f"{views:>6}  {'err':>7}          {title[:40]}  ({str(e)[:40]})")
             continue
-        # NO ROWS IS NOT ZERO. Analytics lags 24-72h, so a video posted
-        # yesterday reports nothing at all. Defaulting that to 0% put it in the
-        # average as a total drop-off: the car channel's four videos came back
-        # "0.0% retention" and the report advised rewriting the hooks, when in
-        # fact not one of them was old enough to have data. Missing and awful
-        # must not look the same -- that is the same mistake as averaging
-        # loopers, in the other direction.
-        if not got or got[0][0] is None:
+        # UNPROCESSED IS NOT ZERO. Analytics lags 24-72h, and for a video it
+        # has not processed it returns a ZERO ROW rather than no row -- [[0, 0,
+        # 0]], indistinguishable by shape from a real measurement. Taking that
+        # at face value put every young video into the average as a total
+        # drop-off: the car channel came back "0.0% retention" across 1334
+        # views and the report advised rewriting the hooks, when not one video
+        # was old enough to have data.
+        #
+        # The tell is analytics' OWN view count. When it says 0 views for a
+        # video the Data API says has hundreds, it has not caught up. (A video
+        # genuinely on 0 views has nothing to measure either, so treating both
+        # as no-data is right.)
+        ana_views = got[0][2] if got and len(got[0]) > 2 else 0
+        if not got or not ana_views:
             nodata.append((title, views))
             print(f"{views:>6}  {'n/a':>7}  {'':>7}  {seconds:>4}s  {title[:40]}"
                   f"  (too new -- analytics lag)")
