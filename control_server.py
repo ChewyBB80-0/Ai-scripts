@@ -305,7 +305,7 @@ TOOLS = [
     {"name": "reply_to_comments", "description": "Run the auto comment-reply engine over new YouTube + Instagram comments. dry_run=true previews the replies WITHOUT posting (default, safe); dry_run=false actually posts them. Needs the YouTube force-ssl re-auth and IG manage_comments permission first.",
      "input_schema": {"type": "object", "properties": {"dry_run": {"type": "boolean", "description": "true = preview only (default); false = actually post"}}}},
     {"name": "check_coverage", "description": "Check whether every recent story actually reached BOTH YouTube and Instagram. The two platforms post independently, so a video can quietly end up on only one. Reports gaps; set fix=true to post the missing side (this publishes real videos -- confirm with the user first). TikTok is shown for info only and is never counted as a gap since it's approval-gated.",
-     "input_schema": {"type": "object", "properties": {"days": {"type": "integer", "description": "how far back to look (default 7)"}, "fix": {"type": "boolean", "description": "actually post the missing side (default false = report only)"}}}},
+     "input_schema": {"type": "object", "properties": {"days": {"type": "integer", "description": "how far back to look (default 7)"}, "fix": {"type": "boolean", "description": "actually post the missing side (default false = report only)"}, "account": {"type": "string", "description": "account id (parkourflux, carveteran) or 'all' for every enabled channel (default)"}}}},
     {"name": "post_to_tiktok", "description": "Push ALREADY-RENDERED video(s) from output/ to the user's TikTok drafts (inbox) -- this is how we cross-post existing YouTube/Instagram content to TikTok. TikTok is DRAFT-ONLY right now: the video lands in the TikTok app and the user taps Post themselves. Use 'count' for the N newest videos (default 1, max 5) or 'filename' for a specific one. This does NOT generate a new story -- use post_video for that.",
      "input_schema": {"type": "object", "properties": {"count": {"type": "integer", "description": "how many of the newest rendered videos to push (default 1, max 5)"}, "filename": {"type": "string", "description": "specific video filename in output/ (optional)"}}}},
 ]
@@ -313,11 +313,28 @@ TOOLS = [
 
 def _t_coverage(inp):
     import coverage_check
-    days = inp.get("days", coverage_check.DEFAULT_DAYS)
-    out = coverage_check.report(days)
-    if inp.get("fix"):
-        out += "\n\n" + coverage_check.fix(days)
-    return out
+    from accounts import all_accounts, get_account
+    days = (inp or {}).get("days", coverage_check.DEFAULT_DAYS)
+    want = (inp or {}).get("account", "")
+    if want in ("", "all"):
+        accs = [a for a in all_accounts() if a.enabled]
+    else:
+        try:
+            accs = [get_account(want)]
+        except KeyError:
+            return (f"No account named {want!r}. Known: "
+                    f"{', '.join(a.id for a in all_accounts())}")
+    # Coverage is per channel, and a half-posted video on the channel we did not
+    # look at is invisible -- which is the one thing this check exists to catch.
+    # It used to report only the first account no matter what.
+    out = []
+    for acc in accs:
+        coverage_check.use_account(acc.id)
+        section = coverage_check.report(days)
+        if inp.get("fix"):
+            section += "\n\n" + coverage_check.fix(days)
+        out.append(f"**{acc.name}**\n{section}")
+    return "\n\n".join(out)
 
 
 def _t_tiktok(inp):

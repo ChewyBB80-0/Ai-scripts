@@ -24,6 +24,7 @@ ROOT = Path(__file__).parent
 # The account's log, not "the" log. Defaults to the first account so existing
 # callers and the bare CLI behave exactly as before; use_account() repoints it.
 LOG = ROOT / "output" / "post_log.csv"
+OUT = ROOT / "output"
 
 
 def use_account(acc_id: str = "") -> str:
@@ -33,12 +34,13 @@ def use_account(acc_id: str = "") -> str:
     while this reads the story channel's log, which is the exact failure the
     checker exists to catch.
     """
-    global LOG
+    global LOG, OUT
     import sys as _sys
     _sys.path.insert(0, str(ROOT))
     from accounts import all_accounts, get_account, paths
     acc = get_account(acc_id) if acc_id else all_accounts()[0]
     LOG = paths(acc)["post_log"]
+    OUT = paths(acc)["out_dir"]
     return acc.name
 
 # statuses that mean "this story is on YouTube" -- scheduled counts, the upload
@@ -220,7 +222,7 @@ def _title_for(stem: str) -> str:
     story's own hook -- using the bare stem instead put a raw filename
     ("sisters wedding ring pt1") on a public YouTube video on 2026-07-23."""
     import re
-    cap = ROOT / "output" / f"{stem}_caption.txt"
+    cap = OUT / f"{stem}_caption.txt"
     if cap.exists():
         for line in cap.read_text(encoding="utf-8").splitlines():
             line = line.strip()
@@ -241,7 +243,7 @@ def fix(days: int | None = None, dry_run: bool = False) -> str:
     import bot
     done, failed = [], []
     for stem, missing in holes:
-        video = ROOT / "output" / f"{stem}.mp4"
+        video = OUT / f"{stem}.mp4"
         if not video.exists():
             failed.append(f"{stem} (render cleaned up)")
             continue
@@ -272,11 +274,18 @@ DEFAULT_DAYS = 7   # anything older is history we can't meaningfully act on:
 if __name__ == "__main__":
     import sys
     args = sys.argv[1:]
+    if "--account" in args:
+        try:
+            who = use_account(args[args.index("--account") + 1])
+        except (IndexError, KeyError) as e:
+            raise SystemExit(f"--account needs a known channel id ({e})")
+    else:
+        who = use_account()
     days = None if "--all" in args else DEFAULT_DAYS
     if "--days" in args:
         days = int(args[args.index("--days") + 1])
     scope = "all time" if days is None else f"last {days} days"
-    print(f"Platform coverage ({scope}):\n")
+    print(f"Platform coverage for {who} ({scope}):\n")
     print(report(days))
     if "--fix" in args:
         print("\n" + fix(days, dry_run="--dry-run" in args))
