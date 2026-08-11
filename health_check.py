@@ -209,21 +209,29 @@ def collect() -> list[str]:
                 problems.append(f"**{acc.name}: no YouTube token** ({tok.name}) "
                                 f"-- run: python add_channel.py {acc.id}")
                 continue
-            c = Credentials.from_authorized_user_file(str(tok))
-            if c.expired and c.refresh_token:
-                c.refresh(Request())
-            if not c.valid:
-                problems.append(f"**{acc.name}: YouTube token is invalid** -- "
-                                f"re-run: python add_channel.py {acc.id}")
-            # A token can refresh cleanly and still be missing the scope
-            # uploading needs -- which is exactly how the invalid_scope outage
-            # looked from here: this check passed while every upload failed.
-            # Compare what the token was granted against what posting requires.
-            if UPLOAD_SCOPE not in (c.scopes or []):
-                problems.append(f"**{acc.name}: YouTube token lacks the upload "
-                                "scope** -- uploads will fail while everything "
-                                "else looks healthy. Re-auth: python "
-                                f"add_channel.py {acc.id}")
+            # Each account in its own try: a corrupt or unreadable token on the
+            # first channel must not abort the loop, or the remaining channels
+            # go unchecked behind one generic "token check failed" -- which is
+            # the very blind spot this loop was added to close.
+            try:
+                c = Credentials.from_authorized_user_file(str(tok))
+                if c.expired and c.refresh_token:
+                    c.refresh(Request())
+                if not c.valid:
+                    problems.append(f"**{acc.name}: YouTube token is invalid** "
+                                    f"-- re-run: python add_channel.py {acc.id}")
+                # A token can refresh cleanly and still be missing the scope
+                # uploading needs -- which is exactly how the invalid_scope
+                # outage looked from here: this check passed while every upload
+                # failed. Compare what was granted against what posting needs.
+                if UPLOAD_SCOPE not in (c.scopes or []):
+                    problems.append(f"**{acc.name}: YouTube token lacks the "
+                                    "upload scope** -- uploads will fail while "
+                                    "everything else looks healthy. Re-auth: "
+                                    f"python add_channel.py {acc.id}")
+            except Exception as e:
+                problems.append(f"**{acc.name}: YouTube token check failed:** "
+                                f"{str(e)[:80]}")
     except Exception as e:
         problems.append(f"**YouTube token check failed:** {str(e)[:90]}")
 

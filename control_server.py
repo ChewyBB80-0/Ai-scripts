@@ -249,7 +249,17 @@ def t_recent(inp=None):
     # made "what did we post" answer for one channel and silently omit the other.
     from accounts import all_accounts, get_account, paths
     want = (inp or {}).get("account", "")
-    accs = [get_account(want)] if want else list(all_accounts())
+    if want in ("", "all"):
+        accs = list(all_accounts())
+    else:
+        # get_account raises on an unknown id, and nothing wraps DISPATCH --
+        # an invented account name would take down the whole request instead of
+        # answering. Match how get_stats/post_video already handle it.
+        try:
+            accs = [get_account(want)]
+        except KeyError:
+            return (f"No account named {want!r}. Known: "
+                    f"{', '.join(a.id for a in all_accounts())}")
     rows = []
     for acc in accs:
         log = paths(acc)["post_log"]
@@ -278,8 +288,8 @@ TOOLS = [
      "input_schema": {"type": "object", "properties": {"on": {"type": "boolean"}}, "required": ["on"]}},
     {"name": "get_autonomy", "description": "Check if autonomous posting is currently on.",
      "input_schema": {"type": "object", "properties": {}}},
-    {"name": "recent_posts", "description": "List the last few things posted and where.",
-     "input_schema": {"type": "object", "properties": {}}},
+    {"name": "recent_posts", "description": "List the last few things posted and where. Covers EVERY channel by default, interleaved by time, with the channel named on each row -- pass account to narrow to one. Always keep the channel visible when relaying these; the two channels post different content and an unlabelled list reads as if it were all one.",
+     "input_schema": {"type": "object", "properties": {"account": {"type": "string", "description": "account id (parkourflux, carveteran) or 'all' for every channel (default)"}}}},
     {"name": "move_file", "description": "File an uploaded attachment into the pipeline: dest 'footage' (background clips), 'music' (audio beds), 'satisfying' (split-screen clips), or 'branding' (logo).",
      "input_schema": {"type": "object", "properties": {"filename": {"type": "string"}, "dest": {"type": "string", "enum": ["footage", "music", "satisfying", "branding"]}}, "required": ["filename", "dest"]}},
     {"name": "list_uploads", "description": "List files the user has uploaded that are waiting to be filed.",

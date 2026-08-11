@@ -114,13 +114,15 @@ try:
     import sys as _sys
     _sys.path.insert(0, str(ROOT))
     from accounts import all_accounts as _all_accounts
-    _TOKENS = [(a.yt_token, f"YouTube auth for {a.name}") for a in _all_accounts()]
+    _TOKENS = [(a.yt_token, a.name) for a in _all_accounts()]
 except Exception:
-    _TOKENS = [("token.json", "YouTube auth")]
+    # accounts.json unreadable is itself checked below; fall back to the single
+    # token so preflight still reports something rather than skipping the check.
+    _TOKENS = [("token.json", "YouTube")]
 
 for f, why, required in [
-    *[(t, f"{w} (works on any machine -- published app)", True)
-      for t, w in _TOKENS],
+    *[(t, f"YouTube auth for {n} (works on any machine -- published app)", True)
+      for t, n in _TOKENS],
     ("client_secret.json", "YouTube OAuth client", True),
     ("accounts.json", "channel config", False),
     ("tiktok_token.json", "TikTok auth -- re-run `tiktok_upload.py auth` if absent", False),
@@ -197,8 +199,8 @@ except Exception as e:
 try:
     from google.oauth2.credentials import Credentials
     from google.auth.transport.requests import Request
-    for _tok, _who in _TOKENS:
-        _label = f"YouTube token refreshes ({_who.split('for ')[-1]})"
+    for _tok, _name in _TOKENS:
+        _label = f"YouTube token refreshes ({_name})"
         try:
             c = Credentials.from_authorized_user_file(str(ROOT / _tok))
             if c.expired and c.refresh_token:
