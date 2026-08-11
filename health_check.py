@@ -133,6 +133,35 @@ def collect() -> list[str]:
         weekly = bot.this_weeks_upload_count()
         if weekly >= cap or not autonomy:
             continue                     # legitimately quiet
+        # "Hasn't posted" is only a fault if the bot was ALLOWED to post. Ask
+        # the bot itself rather than re-deriving the rule here: with a posting
+        # window, a channel is deliberately silent from its last post until the
+        # window reopens, which for a 1/day channel is up to 24h + the window's
+        # closed hours -- well past any fixed threshold. Re-deriving that
+        # arithmetic in two places is how this alarm cried wolf the last time.
+        try:
+            if bot._too_soon(acc) > 0:
+                continue                 # holding on purpose, not stalled
+            # And give it GRACE_HOURS after the window opens to actually fire.
+            # The bot only wakes hourly, so between the window opening and its
+            # first run the channel is legitimately silent while _too_soon has
+            # already dropped to 0 -- a health run in that gap would alarm
+            # minutes before a perfectly good post.
+            from accounts import post_window, window_hours
+            w = post_window(acc)
+            if w:
+                # Deliberately NOT GRACE_HOURS. That is 6h, and a 15:00-21:00
+                # window is 6h wide -- the grace would cover the whole window
+                # and this channel could never be reported stale at all. It only
+                # has to span the wait for the next hourly run plus a render,
+                # and never more than half the window.
+                grace = min(2.0, window_hours(acc) / 2)
+                now = datetime.now().astimezone()
+                opened = now.replace(hour=w[0], minute=0, second=0, microsecond=0)
+                if 0 <= (now - opened).total_seconds() / 3600 < grace:
+                    continue
+        except Exception:
+            pass                         # never let the guard suppress a real alarm
         age_h = (datetime.now().astimezone() - last).total_seconds() / 3600
         # Expected interval plus grace, so a channel is flagged only once it has
         # genuinely missed a slot rather than merely being between them.
