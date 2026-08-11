@@ -56,13 +56,6 @@ def use_account(acc_id: str = ""):
     _sys.path.insert(0, str(ROOT))
     from accounts import all_accounts, get_account, paths
     acc = get_account(acc_id) if acc_id else all_accounts()[0]
-    # The titles, chapter cards and THEMES below are all written for narrated
-    # stories. Pointed at a dialogue channel this would still build a file --
-    # car episodes under "Stories To Fall Asleep To" -- so refuse instead.
-    if getattr(acc, "content_type", "story") != "story":
-        raise SystemExit(
-            f"{acc.name} makes {acc.content_type} content; compilations are "
-            "story-format only (the titles and chapter cards assume it).")
     p = paths(acc)
     OUT = p["out_dir"]
     OUT_DIR = OUT / "compilations"
@@ -71,6 +64,24 @@ def use_account(acc_id: str = ""):
     STATS = p["channel_stats"]
     ACCOUNT = acc
     return acc
+# Long-form copy per content type. Everything format-specific lives here, so a
+# new channel format is a dict entry rather than an edit to upload(). Tags are
+# NOT here -- they come off the account, which already carries the right ones.
+COMPILATION_COPY = {
+    "story": {
+        "title": "Stories To Fall Asleep To (Story Compilation)",
+        "unit": "original short stories",
+        "jump": "Jump to any story using the chapters below.",
+        "tail": "New stories every day — subscribe so you don't miss them.",
+    },
+    "dialogue": {
+        "title": "Car Repairs You're Being Overcharged For (Compilation)",
+        "unit": "quick car-maintenance breakdowns",
+        "jump": "Jump to any topic using the chapters below.",
+        "tail": "New car tips every day — subscribe so you don't miss them.",
+    },
+}
+
 W, H = 1920, 1080          # 16:9 long-form, NOT vertical (must not be a Short)
 CARD_SECONDS = 2.0
 
@@ -221,12 +232,27 @@ def rank_stories(include_used: bool = False) -> list[dict]:
             stem2views[stem] = max(stem2views.get(stem, 0),
                                    views_by_id.get(r[2], 0))
 
+    # Only material that actually went out. A render sitting in out_dir was
+    # never vetted -- it may predate a quality fix, or have been rejected -- and
+    # a compilation is the one place an unposted file could reach the public
+    # without anyone having decided it should. The car channel has 7 such
+    # renders, several from during the pitch/shadow/caption iteration; the only
+    # thing keeping them out was that compilations were refused for it at all.
+    # Instagram-only counts: it shipped, and it is still new to a YouTube
+    # audience.
+    published = set()
+    if POST_LOG.exists():
+        for r in csv.reader(open(POST_LOG, encoding="utf-8")):
+            if len(r) >= 4 and r[3] in ("posted", "posted_manual", "scheduled",
+                                        "posted_instagram"):
+                published.add(r[1].replace(".mp4", ""))
+
     used = set() if include_used else _used()
     # Never reuse something the owner deleted -- see _deleted_stems().
     skip = used | _deleted_stems()
     groups: dict[str, list[Path]] = {}
     for p in sorted(OUT.glob("*.mp4")):
-        if p.stem.startswith("_") or p.stem in skip:
+        if p.stem.startswith("_") or p.stem in skip or p.stem not in published:
             continue
         groups.setdefault(_base(p.stem), []).append(p)
 
@@ -431,19 +457,26 @@ def upload(path: Path, picked: list[dict] | None = None,
     # our own fiction, and claiming a Reddit origin is the thing YouTube's
     # inauthentic-content rules look for. It matters more here than on a Short:
     # long-form is what carries watch hours toward monetization review.
+    kind = getattr(acc, "content_type", "story")
+    copy = COMPILATION_COPY.get(kind, COMPILATION_COPY["story"])
+    # THEMES are story concepts (landlord, wedding, HOA), so a themed title
+    # only applies where a theme was actually matched.
     if theme and theme in THEMES:
         title = f"{THEMES[theme][1]} (Story Compilation)"
     else:
-        title = "Stories To Fall Asleep To (Story Compilation)"
-    desc = (f"{n} original short stories back to back. "
-            "Jump to any story using the chapters below.\n\n"
+        title = copy["title"]
+    desc = (f"{n} {copy['unit']} back to back. {copy['jump']}\n\n"
             + (_chapters(picked) if picked else "")
-            + "\n\nNew stories every day — subscribe so you don't miss them.\n\n"
+            + f"\n\n{copy['tail']}\n\n"
             + getattr(config, "ORIGINALITY_NOTE", "").strip()
-            + "\n\n#storytime #shortstory #fiction")
+            + "\n\n" + getattr(acc, "yt_hashtags", "").replace("#shorts ", ""))
+    # Tags off the ACCOUNT. The hardcoded list said "short fiction" and
+    # "original story" for every channel, which on the car channel would tell
+    # YouTube the wrong audience -- the same failure per-account yt_tags fixed
+    # for Shorts. "shorts" itself is dropped: this is deliberately not one.
+    tags = [t for t in getattr(acc, "yt_tags", ()) if t != "shorts"]
     vid = upload_video(str(path), title=title, description=desc,
-                       tags=["storytime", "compilation", "short fiction",
-                             "original story", "stories"],
+                       tags=(tags + ["compilation"])[:15],
                        privacy_status=privacy or config.PRIVACY_STATUS,
                        token_file=acc.yt_token)
     print(f"Uploaded: https://youtube.com/watch?v={vid}")
@@ -465,6 +498,44 @@ def upload(path: Path, picked: list[dict] | None = None,
     except Exception as e:
         print(f"Thumbnail step skipped (video is fine): {e}")
     return vid
+
+
+def _weekly_build(acc) -> None:
+    """One channel's weekly build. Never raises -- a channel that cannot build
+    must not stop the next one, and this runs from the hourly job."""
+    from datetime import date, datetime
+    try:
+        marker = OUT_DIR / ".last_weekly"
+        week = f"{date.today().isocalendar().year}-W{date.today().isocalendar().week}"
+        if marker.exists() and marker.read_text().strip() == week:
+            print(f"[{acc.id}] weekly compilation already built this week")
+            return
+        if date.today().weekday() != COMPILATION_WEEKDAY or datetime.now().hour < 9:
+            return
+        # Published material only -- see rank_stories. A young channel sits
+        # under this floor and waits, which is how the car channel turns itself
+        # on once it has actually shipped enough episodes.
+        avail = sum(g["seconds"] for g in rank_stories()) / 60
+        if avail < MIN_MINUTES:
+            print(f"[{acc.id}] only {avail:.1f} min published and unused -- "
+                  "waiting for more material")
+            return
+        out = build(TARGET_MINUTES, theme='auto')
+        if out:
+            OUT_DIR.mkdir(parents=True, exist_ok=True)
+            marker.write_text(week)
+            try:
+                import sys as _s
+                _s.path.insert(0, str(ROOT / "scripts"))
+                from discord_notify import send_dm
+                send_dm(f"🎬 **Weekly compilation ready** — {acc.name}: "
+                        f"`{out.name}` ({_duration(out)/60:.0f} min).\n"
+                        f"Review it, then upload with:\n"
+                        f"`python compilation.py --upload --account {acc.id}`")
+            except Exception:
+                pass
+    except Exception as e:
+        print(f"[{acc.id}] weekly compilation skipped (non-fatal): {e}")
 
 
 if __name__ == "__main__":
@@ -489,36 +560,18 @@ if __name__ == "__main__":
         # Called hourly by run_all.py, so it must be a cheap no-op almost every
         # time. Deliberately BUILDS but never uploads: long-form lives or dies
         # on its title and thumbnail, so the owner reviews before publishing.
-        from datetime import date, datetime
-        try:
-            marker = OUT_DIR / ".last_weekly"
-            week = f"{date.today().isocalendar().year}-W{date.today().isocalendar().week}"
-            if marker.exists() and marker.read_text().strip() == week:
-                print("weekly compilation already built this week")
-                raise SystemExit(0)
-            if date.today().weekday() != COMPILATION_WEEKDAY or datetime.now().hour < 9:
-                raise SystemExit(0)
-            avail = sum(g["seconds"] for g in rank_stories()) / 60
-            if avail < MIN_MINUTES:
-                print(f"only {avail:.1f} min unused -- waiting for more material")
-                raise SystemExit(0)
-            out = build(TARGET_MINUTES, theme='auto')
-            if out:
-                OUT_DIR.mkdir(parents=True, exist_ok=True)
-                marker.write_text(week)
-                try:
-                    import sys as _s
-                    _s.path.insert(0, str(ROOT / "scripts"))
-                    from discord_notify import send_dm
-                    send_dm(f"🎬 **Weekly compilation ready** — `{out.name}` "
-                            f"({_duration(out)/60:.0f} min).\nReview it, then "
-                            f"upload with:\n`python compilation.py --upload`")
-                except Exception:
-                    pass
-        except SystemExit:
-            raise
-        except Exception as e:
-            print(f"weekly compilation skipped (non-fatal): {e}")
+        #
+        # EVERY enabled channel, not just the first. run_all invokes this with
+        # no --account, so a second channel was never even considered. Each one
+        # gates itself on having MIN_MINUTES of PUBLISHED material, so a young
+        # channel simply waits and switches itself on once it has shipped
+        # enough -- no separate enable step to remember.
+        from accounts import load_accounts
+        # use_account() resolves the id and repoints every path this module
+        # reads, so route through it rather than holding an Account here.
+        _ids = [a.account] if a.account else [x.id for x in load_accounts()]
+        for _id in _ids:
+            _weekly_build(use_account(_id))
         raise SystemExit(0)
 
     if a.themes:
