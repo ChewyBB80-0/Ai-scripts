@@ -43,7 +43,11 @@ ATTRS = ROOT / "output" / "video_attrs.jsonl"
 # Attributes worth ranking. Runtime and part number are bucketed rather than
 # used raw -- "68.2 seconds" is not a lever anyone can pull, "60-75s" is.
 DIMENSIONS = ["genre", "cta_variant", "background_set", "source",
-              "multipart", "part_bucket", "runtime_bucket", "hinted"]
+              "multipart", "part_bucket", "runtime_bucket", "hinted",
+              # Dialogue channels: how many back-and-forths an episode ran to.
+              # Recorded per render but unread until now, so the two-voice
+              # format had exactly one usable lever (runtime) in this report.
+              "exchange_bucket"]
 
 
 def _load_attrs() -> dict[str, dict]:
@@ -74,6 +78,10 @@ def _bucket(row: dict) -> dict:
     p = row.get("part")
     if isinstance(p, int):
         out["part_bucket"] = "part 1" if p == 1 else "part 2" if p == 2 else "part 3+"
+    ex = row.get("exchanges")
+    if isinstance(ex, int):
+        out["exchange_bucket"] = ("<6" if ex < 6 else "6-8" if ex <= 8
+                                  else "9-11" if ex <= 11 else "12+")
     out["hinted"] = bool(row.get("trend_hint"))
     return out
 
