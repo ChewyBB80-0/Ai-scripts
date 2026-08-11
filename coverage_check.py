@@ -204,9 +204,17 @@ def report(days: int | None = None) -> str:
     lines = []
     for stem, c in sorted(cov.items(), key=lambda kv: kv[1]["when"]):
         both = c["youtube"] and c["instagram"]
-        mark = "OK  " if both else "GAP "
-        where = "YT+IG" if both else ("YT only" if c["youtube"] else "IG only")
-        lines.append(f"{mark} {where:8} tiktok:{tt.get(stem, '-'):8} {stem[:48]}")
+        neither = not c["youtube"] and not c["instagram"]
+        # "neither" is its own state. The old two-way split fell through to
+        # "IG only" for a video that reached NO platform -- a row logged
+        # pending_review and never posted was reported as live on Instagram and
+        # merely missing YouTube, which is the opposite of what needs doing.
+        # It also printed GAP while gaps() correctly ignored it, so the rows and
+        # the summary disagreed.
+        mark = "OK  " if both else ("--  " if neither else "GAP ")
+        where = ("YT+IG" if both else "not posted" if neither
+                 else "YT only" if c["youtube"] else "IG only")
+        lines.append(f"{mark} {where:10} tiktok:{tt.get(stem, '-'):8} {stem[:48]}")
     body = "\n".join(lines)
     if holes:
         body += f"\n\n{len(holes)} gap(s): " + ", ".join(
