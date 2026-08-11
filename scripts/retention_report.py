@@ -122,18 +122,30 @@ def run(limit: int = 10):
     # 354-view one.
     print(f"{'views':>6}  {'avg%':>7}  {'avg sec':>7}  {'len':>5}  title")
     print("-" * 78)
-    unfinished, looped = [], []
+    unfinished, looped, nodata = [], [], []
     for vid, (title, views, seconds) in top:
         try:
             r = ya.reports().query(
                 ids="channel==MINE", startDate=start, endDate=end,
                 metrics="averageViewPercentage,averageViewDuration",
                 filters=f"video=={vid}").execute()
-            got = r.get("rows") or [[0, 0]]
-            pct, dur = got[0][0], got[0][1]
+            got = r.get("rows") or []
         except Exception as e:
             print(f"{views:>6}  {'err':>7}          {title[:40]}  ({str(e)[:40]})")
             continue
+        # NO ROWS IS NOT ZERO. Analytics lags 24-72h, so a video posted
+        # yesterday reports nothing at all. Defaulting that to 0% put it in the
+        # average as a total drop-off: the car channel's four videos came back
+        # "0.0% retention" and the report advised rewriting the hooks, when in
+        # fact not one of them was old enough to have data. Missing and awful
+        # must not look the same -- that is the same mistake as averaging
+        # loopers, in the other direction.
+        if not got or got[0][0] is None:
+            nodata.append((title, views))
+            print(f"{views:>6}  {'n/a':>7}  {'':>7}  {seconds:>4}s  {title[:40]}"
+                  f"  (too new -- analytics lag)")
+            continue
+        pct, dur = got[0][0], got[0][1]
         mark = "  LOOP" if pct > 100 else ""
         (looped if pct > 100 else unfinished).append((pct, views))
         print(f"{views:>6}  {pct:>7.1f}  {dur:>7.0f}  {seconds:>4}s  {title[:40]}{mark}")
@@ -144,8 +156,19 @@ def run(limit: int = 10):
         print(f"  {len(looped)} video(s) averaged OVER 100% -- viewers looped them "
               f"({lv} views). Good, but it says nothing about drop-off, so they are\n"
               f"  excluded from the figure below.")
+    if nodata:
+        nv = sum(v for _, v in nodata)
+        print(f"  {len(nodata)} video(s) have no analytics yet ({nv} views) -- "
+              f"YouTube reports 24-72h late. Excluded, not counted as 0%.")
     if not unfinished:
-        print("  No video averaged under 100%: nothing dropped off before finishing.")
+        if nodata and not looped:
+            # Say nothing rather than something wrong: with no measured video
+            # there is no retention figure and no verdict to give.
+            print("  No retention data yet -- nothing to read. Check back in a "
+                  "day or two.")
+        else:
+            print("  No video averaged under 100%: nothing dropped off before "
+                  "finishing.")
         return
     tv = sum(v for _, v in unfinished) or 1
     avg = sum(p * v for p, v in unfinished) / tv
