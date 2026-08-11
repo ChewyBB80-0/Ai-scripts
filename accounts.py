@@ -144,6 +144,42 @@ def get_account(acc_id: str) -> Account:
     raise KeyError(f"no account '{acc_id}' in accounts.json")
 
 
+def paths(acc: Account) -> dict:
+    """Every file that belongs to ONE account, resolved.
+
+    The single-channel assumption kept coming back -- the dashboard, the ops
+    bot's stats, its fast reply, the daily report and the health check each
+    hardcoded output/post_log.csv or output/channel_stats.json, which are the
+    FIRST account's files. Each was fixed separately and the next module made
+    the same mistake, because nothing owned the answer.
+
+    This owns it. A module that wants an account's data asks here and cannot
+    accidentally read someone else's.
+    """
+    d = ROOT / acc.out_dir
+    return {
+        "out_dir": d,
+        "post_log": ROOT / acc.post_log,
+        "queue": ROOT / acc.queue_file,
+        "channel_stats": d / "channel_stats.json",
+        "ig_stats": d / "ig_stats.json",
+        "yt_token": ROOT / acc.yt_token,
+    }
+
+
+def expected_gap_hours(acc: Account) -> float:
+    """How long between posts this channel should normally go.
+
+    Derived, not a constant. health_check used a single STALE_HOURS = 14 for
+    the whole operation; the moment ParkourFlux moved to 1/day that fired a
+    false 'no post in 17h' alarm every single day -- an alert that is wrong
+    daily is worse than none, because it trains you to ignore the channel it
+    arrives on.
+    """
+    t = max(1, int(acc.daily_target or 1))
+    return 24.0 / t
+
+
 def post_gap_hours(acc: Account) -> float:
     """How long this channel must wait between posts.
 

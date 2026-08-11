@@ -47,7 +47,10 @@ _PT = ZoneInfo("America/Los_Angeles")
 
 # Generous: the pipeline legitimately idles overnight and between slots, so a
 # short gap means nothing. This is "something is wrong", not "it is idle".
+# Floor for the staleness alarm. The real threshold is per channel: its own
+# expected gap (24 / daily_target) plus GRACE_HOURS, whichever is larger.
 STALE_HOURS = 14
+GRACE_HOURS = 6
 COOLDOWN_HOURS = 8
 DISK_FREE_MIN_GB = 5
 ERROR_BURST = 5             # this many new errors since last check = a problem
@@ -65,12 +68,13 @@ def _save(s: dict):
     STATE.write_text(json.dumps(s, indent=1), encoding="utf-8")
 
 
-def _last_post() -> datetime | None:
-    """Most recent successful publish of any kind."""
-    if not POST_LOG.exists():
+def _last_post(log: Path | None = None) -> datetime | None:
+    """Most recent successful publish of any kind, for ONE channel's log."""
+    log = log or POST_LOG
+    if not log.exists():
         return None
     last = None
-    for r in csv.reader(open(POST_LOG, encoding="utf-8")):
+    for r in csv.reader(open(log, encoding="utf-8")):
         if len(r) >= 4 and r[3] in ("posted", "posted_manual",
                                     "posted_instagram", "scheduled"):
             try:
@@ -110,21 +114,37 @@ def collect() -> list[str]:
     # --- 1. has it gone quiet when it shouldn't have? --------------------
     # Order matters: check the LEGITIMATE reasons for silence first, so a
     # capped-out week never reads as a stall.
-    weekly = bot.this_weeks_upload_count()
-    cap = getattr(config, "WEEKLY_POST_TARGET", 14)
-    capped = weekly >= cap
     autonomy = _autonomy_enabled()
-    last = _last_post()
+    cap = getattr(config, "WEEKLY_POST_TARGET", 14)
 
-    if last is None:
-        problems.append("No posts have ever been logged.")
-    else:
+    # Per channel, against ITS OWN cadence. A single global threshold read the
+    # first account's log only, so a second channel could be dead for days
+    # unnoticed -- and the moment ParkourFlux moved to 1/day, a fixed 14h fired
+    # a false alarm every single day.
+    from accounts import expected_gap_hours, load_accounts, paths
+    any_log = False
+    for acc in load_accounts():
+        pth = paths(acc)
+        last = _last_post(pth["post_log"])
+        if last is None:
+            continue
+        any_log = True
+        bot.POST_LOG = pth["post_log"]
+        weekly = bot.this_weeks_upload_count()
+        if weekly >= cap or not autonomy:
+            continue                     # legitimately quiet
         age_h = (datetime.now().astimezone() - last).total_seconds() / 3600
-        if age_h > STALE_HOURS and not capped and autonomy:
+        # Expected interval plus grace, so a channel is flagged only once it has
+        # genuinely missed a slot rather than merely being between them.
+        limit = max(STALE_HOURS, expected_gap_hours(acc) + GRACE_HOURS)
+        if age_h > limit:
             problems.append(
-                f"**No post in {age_h:.0f}h** (last: {last:%a %d %b %H:%M}). "
-                f"Weekly cap is {weekly}/{cap} and autonomy is ON, so it "
-                "should have posted by now.")
+                f"**{acc.name}: no post in {age_h:.0f}h** "
+                f"(last: {last:%a %d %b %H:%M}, expects one every "
+                f"{expected_gap_hours(acc):.0f}h). Weekly cap is {weekly}/{cap} "
+                f"and autonomy is ON, so it should have posted by now.")
+    if not any_log:
+        problems.append("No posts have ever been logged.")
 
     # Autonomy off is worth ONE mention -- it's usually deliberate, but it's
     # also the most common reason someone finds the pipeline silent for days.
