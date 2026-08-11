@@ -11,6 +11,12 @@ awake.
     python scripts/post_check.py                    # all enabled accounts
     python scripts/post_check.py --account carveteran
     python scripts/post_check.py --hours 6 --print  # stdout only
+    python scripts/post_check.py --quiet            # DM only if something is wrong
+
+--quiet is what the daily timer uses. A check that reports every day, including
+the days nothing was wrong, is a check people stop reading -- and they stop
+reading it right before the day it matters. The health check already works this
+way and it is the same reasoning.
 """
 
 import argparse
@@ -57,17 +63,24 @@ def _duration(path: Path) -> float:
         return 0.0
 
 
-def check(acc, hours: int) -> list[str]:
+def check(acc, hours: int) -> tuple[list[str], bool]:
+    """(lines, ok). ok is False when something needs a human.
+
+    Judged against the account's OWN daily_target for the Pacific quota day,
+    not against a fixed number -- the two channels run different cadences, and
+    "1 post" is correct for one and a failure for the other.
+    """
     rows = _recent(acc, hours)
     if not rows:
-        return [f"**{acc.name}** — ❌ nothing posted in the last {hours}h "
-                f"(target {acc.daily_target}/day)"]
+        return ([f"**{acc.name}** — ❌ nothing posted in the last {hours}h "
+                 f"(target {acc.daily_target}/day)"], False)
 
     stems = []
     for stem, _vid, _st in rows:
         if stem not in stems:
             stems.append(stem)
 
+    ok = True
     lines = [f"**{acc.name}** — {len(stems)} post(s) in {hours}h"]
     for stem in stems:
         got = {st for s, _v, st in rows if s == stem}
@@ -77,6 +90,8 @@ def check(acc, hours: int) -> list[str]:
         # Both platforms, or say which is missing. A half-posted video is the
         # failure this whole check exists for -- it looks like success in the
         # log and costs the reach of the platform that never got it.
+        if not (on_yt and on_ig):
+            ok = False
         mark = "✅" if (on_yt and on_ig) else "⚠️"
         miss = "" if (on_yt and on_ig) else (
             "  MISSING " + ("Instagram" if on_yt else "YouTube"))
@@ -89,10 +104,20 @@ def check(acc, hours: int) -> list[str]:
                 line += f"  ({d:.0f}s)"
                 if d < 20:
                     line += " ⚠️ suspiciously short"
+                    ok = False
         lines.append(line)
         if vid:
             lines.append(f"┃    youtube.com/watch?v={vid}")
-    return lines
+
+    # Short of the day's target is a problem even when everything that DID post
+    # looks perfect -- silent under-posting is the failure nothing else catches.
+    import bot as _bot
+    _bot.POST_LOG = ROOT / acc.post_log
+    made = _bot.todays_story_count()
+    if made < acc.daily_target:
+        lines.append(f"┃ ⚠️ {made}/{acc.daily_target} for the Pacific day so far")
+        ok = False
+    return lines, ok
 
 
 def main():
@@ -100,6 +125,8 @@ def main():
     ap.add_argument("--account", default="")
     ap.add_argument("--hours", type=int, default=6)
     ap.add_argument("--print", action="store_true", dest="only_print")
+    ap.add_argument("--quiet", action="store_true",
+                    help="DM only when something is wrong (what the timer uses)")
     a = ap.parse_args()
 
     from accounts import all_accounts, get_account
@@ -107,8 +134,11 @@ def main():
         x for x in all_accounts() if x.enabled]
 
     out = [f"**🔎 Post check** — last {a.hours}h"]
+    all_ok = True
     for acc in accs:
-        out += check(acc, a.hours)
+        lines, ok = check(acc, a.hours)
+        out += lines
+        all_ok = all_ok and ok
 
     err = ROOT / "output" / "errors.log"
     if err.exists():
@@ -129,15 +159,24 @@ def main():
             out.append(f"⚠️ **{len(recent_err)} error(s)** in the window:")
             for ln in recent_err[-3:]:
                 out.append(f"┃ {ln[:120]}")
+            all_ok = False
 
     text = "\n".join(out)
     print(text)
-    if not a.only_print:
-        from discord_notify import send_dm
-        if not send_dm(text):
-            print("  DM FAILED -- report not delivered", file=sys.stderr)
-            raise SystemExit(1)
-        print("  DM delivered")
+    if a.only_print:
+        return
+    if a.quiet and all_ok:
+        # Nothing wrong, so say nothing. The value of this alert is that its
+        # arrival MEANS something; a daily "all fine" trains you to ignore it,
+        # and you stop reading it exactly one day before you needed to.
+        print("  all clear -- staying quiet (--quiet)")
+        return
+
+    from discord_notify import send_dm
+    if not send_dm(text):
+        print("  DM FAILED -- report not delivered", file=sys.stderr)
+        raise SystemExit(1)
+    print("  DM delivered")
 
 
 if __name__ == "__main__":
