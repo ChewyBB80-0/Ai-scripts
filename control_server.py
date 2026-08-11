@@ -857,7 +857,9 @@ def _fast_reply(text: str):
                 for _r in csv.reader(open(_log)):
                     if len(_r) >= 4 and _r[3] in ("posted", "posted_manual",
                                                   "posted_instagram"):
-                        rows.append(list(_r) + [_acc.name])
+                        # The id, not the display name: "[carveteran]" fits the
+                        # line, "[The Car Vete]" is a truncated mess.
+                        rows.append(list(_r) + [_acc.id])
             rows.sort(key=lambda r: r[0])
             if not rows:
                 return "No posts yet."
@@ -865,7 +867,7 @@ def _fast_reply(text: str):
                      "posted_instagram": "Instagram"}
             lines = ["**Recent posts**"]
             for r in rows[-8:][::-1]:
-                title = f"[{r[-1][:12]}] " + r[1].replace("_", " ")[:38]
+                title = f"[{r[-1]}] " + r[1].replace("_", " ")[:38]
                 day = r[0][:10]
                 lines.append(f"• `{day}` {title} → {where.get(r[3], r[3])}")
             return "\n".join(lines)
