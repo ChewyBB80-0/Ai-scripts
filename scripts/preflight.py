@@ -109,8 +109,18 @@ for k, why in OPTIONAL.items():
     check(f"env {k}", PASS if val else WARN, _mask(val) if val else f"not set -- {why}")
 
 # --- credential files that must travel with the folder --------------------
+_TOKENS = []
+try:
+    import sys as _sys
+    _sys.path.insert(0, str(ROOT))
+    from accounts import all_accounts as _all_accounts
+    _TOKENS = [(a.yt_token, f"YouTube auth for {a.name}") for a in _all_accounts()]
+except Exception:
+    _TOKENS = [("token.json", "YouTube auth")]
+
 for f, why, required in [
-    ("token.json", "YouTube auth (works on any machine -- published app)", True),
+    *[(t, f"{w} (works on any machine -- published app)", True)
+      for t, w in _TOKENS],
     ("client_secret.json", "YouTube OAuth client", True),
     ("accounts.json", "channel config", False),
     ("tiktok_token.json", "TikTok auth -- re-run `tiktok_upload.py auth` if absent", False),
@@ -187,11 +197,17 @@ except Exception as e:
 try:
     from google.oauth2.credentials import Credentials
     from google.auth.transport.requests import Request
-    c = Credentials.from_authorized_user_file(str(ROOT / "token.json"))
-    if c.expired and c.refresh_token:
-        c.refresh(Request())
-    check("YouTube token refreshes", PASS if c.valid else FAIL,
-          "durable refresh token OK" if c.valid else "re-run add_channel.py")
+    for _tok, _who in _TOKENS:
+        _label = f"YouTube token refreshes ({_who.split('for ')[-1]})"
+        try:
+            c = Credentials.from_authorized_user_file(str(ROOT / _tok))
+            if c.expired and c.refresh_token:
+                c.refresh(Request())
+            check(_label, PASS if c.valid else FAIL,
+                  "durable refresh token OK" if c.valid
+                  else "re-run add_channel.py")
+        except Exception as e:
+            check(_label, FAIL, str(e)[:70])
 except Exception as e:
     check("YouTube token refreshes", FAIL, str(e)[:70])
 
@@ -229,7 +245,7 @@ except Exception as e:
 
 # --- report ----------------------------------------------------------------
 print("\n" + "=" * 72)
-print("  ParkourFlux preflight")
+print("  preflight")
 print("=" * 72)
 for status, name, detail in results:
     print(f"  [{status}] {name:32} {detail}")

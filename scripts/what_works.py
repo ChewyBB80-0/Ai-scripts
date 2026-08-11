@@ -109,7 +109,7 @@ def _perf(days: int) -> dict[str, dict]:
     is recorded as a loop, not as retention.
     """
     from retention_report import _services
-    yt, ya = _services()
+    yt, ya = _services()          # already pointed at the right account
 
     ch = yt.channels().list(part="contentDetails", mine=True).execute()["items"][0]
     pl = ch["contentDetails"]["relatedPlaylists"]["uploads"]
@@ -161,8 +161,17 @@ def _perf(days: int) -> dict[str, dict]:
 
 
 def analyse(days: int, min_bucket: int,
-            post_log: str = "output/post_log.csv") -> str:
-    attrs = {k.removesuffix(".mp4"): _bucket(v) for k, v in _load_attrs().items()}
+            post_log: str = "output/post_log.csv",
+            account: str = "") -> str:
+    # One attrs file for every channel, tagged with account at render time. Rows
+    # written before that tag existed are all from the first channel, so an
+    # untagged row belongs to it -- dropping them would throw away the entire
+    # backlog this analysis depends on.
+    attrs = {}
+    for k, v in _load_attrs().items():
+        if account and v.get("account", account) != account:
+            continue
+        attrs[k.removesuffix(".mp4")] = _bucket(v)
     if not attrs:
         return ("No attributed videos yet. video_attrs.jsonl is written at "
                 "render time; nothing published before it existed can be "
@@ -243,11 +252,22 @@ def main():
                     help="only consider videos published in this window")
     ap.add_argument("--min", type=int, default=MIN_PER_BUCKET, dest="min_bucket",
                     help="minimum videos in a bucket before it is ranked")
-    ap.add_argument("--account", default="parkourflux",
-                    help="which channel's post log to join through")
+    ap.add_argument("--account", default="",
+                    help="channel id (default: the first account)")
     a = ap.parse_args()
-    from accounts import get_account
-    print(analyse(a.days, a.min_bucket, get_account(a.account).post_log))
+
+    # Every part of the join has to follow the account: the attrs rows, the post
+    # log that maps a stem to a videoId, AND the OAuth token the retention pull
+    # uses. Switching the log without the token joins one channel's stems
+    # against another channel's videos and finds nothing -- which reads as
+    # "not enough data yet" rather than as the wiring mistake it is.
+    from accounts import all_accounts, get_account
+    import retention_report
+    acc = get_account(a.account) if a.account else all_accounts()[0]
+    retention_report.use_account(acc.id)
+    print(f"channel: {acc.name}")
+    print()
+    print(analyse(a.days, a.min_bucket, acc.post_log, acc.id))
 
 
 if __name__ == "__main__":

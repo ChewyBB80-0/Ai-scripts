@@ -226,7 +226,6 @@ SATISFYING_DIR = "footage_satisfying"
 # Put the channel logo at HOOK_CARD_AVATAR to use it as the card's pfp
 # (falls back to a colored initial circle if the file doesn't exist).
 HOOK_CARD = True
-HOOK_CARD_HANDLE = "@ParkourFlux"
 HOOK_CARD_AVATAR = "branding/logo.png"
 
 # ---------------------------------------------------------------------------

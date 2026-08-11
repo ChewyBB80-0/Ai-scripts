@@ -21,7 +21,25 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).parent
+# The account's log, not "the" log. Defaults to the first account so existing
+# callers and the bare CLI behave exactly as before; use_account() repoints it.
 LOG = ROOT / "output" / "post_log.csv"
+
+
+def use_account(acc_id: str = "") -> str:
+    """Point this module at ONE channel's post log. Returns the account name.
+
+    Coverage is per channel: a video half-posted on the car channel is invisible
+    while this reads the story channel's log, which is the exact failure the
+    checker exists to catch.
+    """
+    global LOG
+    import sys as _sys
+    _sys.path.insert(0, str(ROOT))
+    from accounts import all_accounts, get_account, paths
+    acc = get_account(acc_id) if acc_id else all_accounts()[0]
+    LOG = paths(acc)["post_log"]
+    return acc.name
 
 # statuses that mean "this story is on YouTube" -- scheduled counts, the upload
 # already exists and will auto-release

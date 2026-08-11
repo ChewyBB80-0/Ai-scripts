@@ -343,7 +343,8 @@ def overlay_faces(video: Path, spans: list, out: Path) -> Path:
     return out
 
 
-def render(script: dict, footage: list[Path], out: Path | None = None) -> Path:
+def render(script: dict, footage: list[Path], out: Path | None = None,
+           handle: str = "", avatar: str = "") -> Path:
     from assemble import assemble_video_dynamic
 
     lines = [Line(l["speaker"], l["text"], l.get("emotion", "")) for l in script["lines"]]
@@ -371,8 +372,12 @@ def render(script: dict, footage: list[Path], out: Path | None = None) -> Path:
         card = str(OUT_ / f"{stem}_card.png")
         build_hook_card(format_hook_for_display(script.get("title") or script["topic"]),
                         card,
-                        handle="@thecarveteran",
-                        avatar_path=str(ROOT / "branding" / "logo_carveteran.png"))
+                        handle=handle or "@thecarveteran",
+                        # Resolved here rather than by the caller: accounts.json
+                        # stores logo as a repo-relative path, and this renders
+                        # from whatever CWD the scheduler happened to use.
+                        avatar_path=str(ROOT / (avatar or
+                                                "branding/logo_carveteran.png")))
         first = next((b for _, _, a, b in spans[:1]), None)
         card_seconds = (first / 1000 + 0.4) if first else 3.5
     except Exception as e:

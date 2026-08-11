@@ -244,12 +244,27 @@ def t_list_uploads(_):
     return json.dumps(files) if files else "No uploaded files waiting."
 
 
-def t_recent(_):
-    log = ROOT / "output/post_log.csv"
-    if not log.exists():
+def t_recent(inp=None):
+    # Every channel unless one is named. Reading only the first account's log
+    # made "what did we post" answer for one channel and silently omit the other.
+    from accounts import all_accounts, get_account, paths
+    want = (inp or {}).get("account", "")
+    accs = [get_account(want)] if want else list(all_accounts())
+    rows = []
+    for acc in accs:
+        log = paths(acc)["post_log"]
+        if not log.exists():
+            continue
+        for r in csv.reader(open(log)):
+            if len(r) >= 4 and r[3] in ("posted", "posted_manual", "posted_instagram"):
+                rows.append({"when": r[0][:16], "channel": acc.name,
+                             "title": r[1], "where": r[3]})
+    if not rows:
         return "No posts yet."
-    rows = [r for r in csv.reader(open(log)) if len(r) >= 4 and r[3] in ("posted", "posted_manual", "posted_instagram")]
-    return json.dumps([{"when": r[0][:16], "title": r[1], "where": r[3]} for r in rows[-8:]])
+    # Interleaved by time, so "what did we post recently" reads as one timeline
+    # rather than one channel's list followed by another's.
+    rows.sort(key=lambda x: x["when"])
+    return json.dumps(rows[-10:])
 
 
 TOOLS = [
@@ -713,7 +728,7 @@ def _fast_reply(text: str):
     # greetings / thanks / help -- pure static, the most common no-value calls
     if t in {"hi", "hey", "hello", "yo", "sup", "hiya", "gm", "good morning"} or \
             (len(words) <= 2 and has("hello", "howdy")):
-        return ("Hey 👋 I'm your ParkourFlux ops bot. Ask me for **stats**, "
+        return ("Hey 👋 I'm your ops bot. Ask me for **stats**, "
                 "**recent posts**, whether **autonomy** is on, or what's "
                 "**scheduled** — or just tell me what to do.")
     if len(words) <= 3 and has("thank", "thanks", "ty", "appreciate"):
@@ -821,16 +836,26 @@ def _fast_reply(text: str):
     if has("recent", "last post", "last posts", "what did you post",
            "latest", "what's posted", "whats posted") and not has("post a", "make", "create", "new"):
         try:
-            log = ROOT / "output/post_log.csv"
-            rows = [r for r in csv.reader(open(log))
-                    if len(r) >= 4 and r[3] in ("posted", "posted_manual", "posted_instagram")]
+            # Every channel, interleaved by time. Reading one log made this
+            # answer for the first account and silently omit the rest.
+            from accounts import all_accounts, paths
+            rows = []
+            for _acc in all_accounts():
+                _log = paths(_acc)["post_log"]
+                if not _log.exists():
+                    continue
+                for _r in csv.reader(open(_log)):
+                    if len(_r) >= 4 and _r[3] in ("posted", "posted_manual",
+                                                  "posted_instagram"):
+                        rows.append(list(_r) + [_acc.name])
+            rows.sort(key=lambda r: r[0])
             if not rows:
                 return "No posts yet."
             where = {"posted": "YouTube", "posted_manual": "YouTube",
                      "posted_instagram": "Instagram"}
             lines = ["**Recent posts**"]
             for r in rows[-8:][::-1]:
-                title = r[1].replace("_", " ")[:46]
+                title = f"[{r[-1][:12]}] " + r[1].replace("_", " ")[:38]
                 day = r[0][:10]
                 lines.append(f"• `{day}` {title} → {where.get(r[3], r[3])}")
             return "\n".join(lines)

@@ -620,11 +620,31 @@ def _run_dialogue(acc: Account, topic_hint: str = "", force: bool = False,
     avoid = _used_topics(acc)
     script = dialogue_video.write_episode(topic=topic_hint, avoid=avoid)
     print(f"[{acc.id}] {script['title']}")
-    path = dialogue_video.render(script, clips, out=out_dir)
+    path = dialogue_video.render(script, clips, out=out_dir,
+                                 handle=acc.handle, avatar=acc.logo or "")
 
     base = Path(path).stem
     (out_dir / f"{base}_caption.txt").write_text(
         _dialogue_caption(acc, script), encoding="utf-8")
+
+    # Same bookkeeping the story path does, with the dimensions that actually
+    # vary here. Without it this channel accumulates views and retention that
+    # can never be attributed to a choice, so what_works.py would stay empty for
+    # it forever -- and unlike retention, these cannot be recovered afterwards.
+    import video_attrs
+    _lines = [l for l in (script.get("lines") or []) if isinstance(l, dict)]
+    video_attrs.record(
+        base,
+        account=acc.id,
+        genre=script.get("topic"),
+        hook=(_lines[0].get("text") if _lines else None),
+        exchanges=len(_lines),
+        speakers=len({l.get("speaker") for l in _lines}),
+        narration_seconds=round(_video_seconds(path), 1) or None,
+        background_set=(clips[0].parent.name if clips else None),
+        source="dialogue",
+        trend_hint=topic_hint or None,
+    )
 
     if config.REVIEW_MODE:
         print(f"[{acc.id}] REVIEW_MODE -- rendered but not posted: {path}")

@@ -39,8 +39,38 @@ import config
 from ffmpeg_setup import ensure_ffmpeg
 
 ROOT = Path(__file__).parent
-OUT_DIR = ROOT / "output" / "compilations"
-USED_FILE = ROOT / "output" / "compilation_used.json"
+# All of these follow the account. use_account() repoints them; the defaults
+# are the first account's, so existing callers behave exactly as before.
+OUT = ROOT / "output"
+OUT_DIR = OUT / "compilations"
+USED_FILE = OUT / "compilation_used.json"
+POST_LOG = OUT / "post_log.csv"
+STATS = OUT / "channel_stats.json"
+ACCOUNT = None
+
+
+def use_account(acc_id: str = ""):
+    """Point this module at ONE channel's rendered videos and history."""
+    global OUT, OUT_DIR, USED_FILE, POST_LOG, STATS, ACCOUNT
+    import sys as _sys
+    _sys.path.insert(0, str(ROOT))
+    from accounts import all_accounts, get_account, paths
+    acc = get_account(acc_id) if acc_id else all_accounts()[0]
+    # The titles, chapter cards and THEMES below are all written for narrated
+    # stories. Pointed at a dialogue channel this would still build a file --
+    # car episodes under "Stories To Fall Asleep To" -- so refuse instead.
+    if getattr(acc, "content_type", "story") != "story":
+        raise SystemExit(
+            f"{acc.name} makes {acc.content_type} content; compilations are "
+            "story-format only (the titles and chapter cards assume it).")
+    p = paths(acc)
+    OUT = p["out_dir"]
+    OUT_DIR = OUT / "compilations"
+    USED_FILE = OUT / "compilation_used.json"
+    POST_LOG = p["post_log"]
+    STATS = p["channel_stats"]
+    ACCOUNT = acc
+    return acc
 W, H = 1920, 1080          # 16:9 long-form, NOT vertical (must not be a Short)
 CARD_SECONDS = 2.0
 
@@ -133,7 +163,7 @@ def _duration(path: Path) -> float:
 
 def _title_for(stem: str) -> str:
     """The story's own hook, from its caption file; falls back to the stem."""
-    cap = ROOT / "output" / f"{stem}_caption.txt"
+    cap = OUT / f"{stem}_caption.txt"
     if cap.exists():
         for line in cap.read_text(encoding="utf-8").splitlines():
             line = line.strip()
@@ -161,7 +191,7 @@ def _deleted_stems() -> set[str]:
         return set()
 
     stem2id = {}
-    for r in csv.reader(open(ROOT / "output/post_log.csv", encoding="utf-8")):
+    for r in csv.reader(open(POST_LOG, encoding="utf-8")):
         if len(r) >= 4 and r[2] and r[3] in ("posted", "posted_manual", "scheduled"):
             stem2id[r[1].replace(".mp4", "")] = r[2]
     ids = list(stem2id.values())
@@ -182,10 +212,10 @@ def rank_stories(include_used: bool = False) -> list[dict]:
     A saga is ranked by its BEST part's views, then its parts play in sequence
     -- otherwise a pt2 could appear pages away from its pt1.
     """
-    stats = json.loads((ROOT / "output/channel_stats.json").read_text())
+    stats = json.loads(STATS.read_text())
     views_by_id = {v["videoId"]: v["views"] for v in stats.get("videos", [])}
     stem2views: dict[str, int] = {}
-    for r in csv.reader(open(ROOT / "output/post_log.csv", encoding="utf-8")):
+    for r in csv.reader(open(POST_LOG, encoding="utf-8")):
         if len(r) >= 4 and r[2] and r[3] in ("posted", "posted_manual"):
             stem = r[1].replace(".mp4", "")
             stem2views[stem] = max(stem2views.get(stem, 0),
@@ -195,7 +225,7 @@ def rank_stories(include_used: bool = False) -> list[dict]:
     # Never reuse something the owner deleted -- see _deleted_stems().
     skip = used | _deleted_stems()
     groups: dict[str, list[Path]] = {}
-    for p in sorted((ROOT / "output").glob("*.mp4")):
+    for p in sorted(OUT.glob("*.mp4")):
         if p.stem.startswith("_") or p.stem in skip:
             continue
         groups.setdefault(_base(p.stem), []).append(p)
@@ -386,7 +416,10 @@ def upload(path: Path, picked: list[dict] | None = None,
     """
     from youtube_upload import upload_video
     from accounts import load_accounts
-    acc = load_accounts()[0]
+    # Upload to whichever channel this run is scoped to -- ACCOUNT is set by
+    # use_account(). Falling back to the first account here would upload one
+    # channel's compilation onto the other's channel.
+    acc = ACCOUNT or load_accounts()[0]
     from datetime import date
     n = len(picked) if picked else 0
     # Title as an EVENT, not an inventory: name the theme ("...Who Went Too
@@ -446,7 +479,11 @@ if __name__ == "__main__":
     ap.add_argument("--weekly", action="store_true",
                     help="build only if it's the chosen weekday and there's "
                          "enough unused material; never fails the run")
+    ap.add_argument("--account", default="",
+                    help="channel id (default: the first account)")
     a = ap.parse_args()
+    _acc = use_account(a.account)
+    print(f"channel: {_acc.name}")
 
     if a.weekly:
         # Called hourly by run_all.py, so it must be a cheap no-op almost every

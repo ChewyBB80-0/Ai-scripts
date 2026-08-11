@@ -27,6 +27,22 @@ from datetime import date, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+# Which channel's analytics. Overridden by --account; the default keeps the
+# bare CLI reading the first account exactly as before.
+TOKEN = ROOT / "token.json"
+ACCOUNT_ID = ""          # set by use_account; names the channel in error text
+
+
+def use_account(acc_id: str = "") -> str:
+    """Point this module at ONE channel's OAuth token. Returns its name."""
+    global TOKEN, ACCOUNT_ID
+    import sys as _sys
+    _sys.path.insert(0, str(ROOT))
+    from accounts import all_accounts, get_account, paths
+    acc = get_account(acc_id) if acc_id else all_accounts()[0]
+    TOKEN = paths(acc)["yt_token"]
+    ACCOUNT_ID = acc.id
+    return acc.name
 sys.path.insert(0, str(ROOT))
 
 
@@ -36,18 +52,19 @@ def _services():
 
     # load_credentials refreshes with the token's OWN scopes -- see the note
     # there on why handing it the wider SCOPES list breaks the refresh.
-    creds = load_credentials(str(ROOT / "token.json"))
+    creds = load_credentials(str(TOKEN))
     have = set(getattr(creds, "scopes", None) or [])
     if not any("yt-analytics" in s for s in have):
         raise SystemExit(
             "This token has no analytics scope, so retention can't be read.\n"
             "Re-auth once on a machine with a browser:\n"
-            "    python add_channel.py parkourflux\n"
+            f"    python add_channel.py {ACCOUNT_ID or 'parkourflux'}\n"
             "(youtube_upload.SCOPES already requests it.)\n\n"
             "Or read it by hand: YouTube Studio -> a video -> Analytics ->\n"
             "'Average percentage viewed'.")
     if not creds.valid:
-        raise SystemExit("Token invalid -- run: python add_channel.py parkourflux")
+        raise SystemExit("Token invalid -- run: python add_channel.py "
+                         f"{ACCOUNT_ID or 'parkourflux'}")
     return (build("youtube", "v3", credentials=creds),
             build("youtubeAnalytics", "v2", credentials=creds))
 
@@ -151,5 +168,8 @@ def run(limit: int = 10):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--all", action="store_true")
+    ap.add_argument("--account", default="", help="channel id (default: the first)")
     a = ap.parse_args()
+    print(f"channel: {use_account(a.account)}")
+    print()
     run(999 if a.all else 10)

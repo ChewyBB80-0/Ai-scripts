@@ -197,20 +197,33 @@ def collect() -> list[str]:
     try:
         from google.oauth2.credentials import Credentials
         from google.auth.transport.requests import Request
-        c = Credentials.from_authorized_user_file(str(ROOT / "token.json"))
-        if c.expired and c.refresh_token:
-            c.refresh(Request())
-        if not c.valid:
-            problems.append("**YouTube token is invalid** -- re-run add_channel.py.")
-        # A token can refresh cleanly and still be missing the scope uploading
-        # needs -- which is exactly how the invalid_scope outage looked from
-        # here: this check passed while every upload failed. Compare what the
-        # token was granted against what posting actually requires.
         from youtube_upload import UPLOAD_SCOPE
-        if UPLOAD_SCOPE not in (c.scopes or []):
-            problems.append("**YouTube token lacks the upload scope** -- "
-                            "uploads will fail while everything else looks "
-                            "healthy. Re-auth: python add_channel.py parkourflux")
+        from accounts import load_accounts, paths
+        # Per channel. One token per account, and a second channel whose token
+        # quietly expired looks identical from here to a healthy one if only the
+        # first is checked -- the same blind spot that let the staleness alarm
+        # watch one log while the other went dark.
+        for acc in load_accounts():
+            tok = paths(acc)["yt_token"]
+            if not tok.exists():
+                problems.append(f"**{acc.name}: no YouTube token** ({tok.name}) "
+                                f"-- run: python add_channel.py {acc.id}")
+                continue
+            c = Credentials.from_authorized_user_file(str(tok))
+            if c.expired and c.refresh_token:
+                c.refresh(Request())
+            if not c.valid:
+                problems.append(f"**{acc.name}: YouTube token is invalid** -- "
+                                f"re-run: python add_channel.py {acc.id}")
+            # A token can refresh cleanly and still be missing the scope
+            # uploading needs -- which is exactly how the invalid_scope outage
+            # looked from here: this check passed while every upload failed.
+            # Compare what the token was granted against what posting requires.
+            if UPLOAD_SCOPE not in (c.scopes or []):
+                problems.append(f"**{acc.name}: YouTube token lacks the upload "
+                                "scope** -- uploads will fail while everything "
+                                "else looks healthy. Re-auth: python "
+                                f"add_channel.py {acc.id}")
     except Exception as e:
         problems.append(f"**YouTube token check failed:** {str(e)[:90]}")
 
@@ -264,7 +277,7 @@ def run(dry_run: bool = False, force: bool = False) -> list[str]:
         except Exception:
             pass
 
-    msg = ("🚨 **ParkourFlux health check**\n"
+    msg = ("🚨 **Health check**\n"
            + "\n".join(f"• {p}" for p in problems))
     print(msg)
     if not dry_run:
