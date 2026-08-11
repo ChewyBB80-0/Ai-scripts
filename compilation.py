@@ -554,7 +554,10 @@ if __name__ == "__main__":
                     help="channel id (default: the first account)")
     a = ap.parse_args()
     _acc = use_account(a.account)
-    print(f"channel: {_acc.name}")
+    # --weekly loops every channel below, so naming one here would imply the
+    # others were not considered.
+    if not a.weekly:
+        print(f"channel: {_acc.name}")
 
     if a.weekly:
         # Called hourly by run_all.py, so it must be a cheap no-op almost every
