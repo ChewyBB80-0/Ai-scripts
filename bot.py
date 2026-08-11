@@ -176,10 +176,16 @@ def _too_soon(acc: Account) -> float:
     and its Instagram cross-post are the same event, so the gap is measured from
     whichever landed last rather than counting them as two.
     """
-    from accounts import post_gap_hours
+    # Two independent reasons to hold: the channel is outside its preferred
+    # hours, or not enough time has passed since the last post. Whichever is
+    # longer wins, and the window applies even when there is no gap rule --
+    # that is the whole point for a 1/day channel, which has no second post to
+    # be spaced away from and so used to fire the instant the quota day rolled.
+    from accounts import hours_until_window, post_gap_hours
+    wait = hours_until_window(acc)
     gap = post_gap_hours(acc)
     if gap <= 0 or not POST_LOG.exists():
-        return 0.0
+        return wait
     newest = None
     with open(POST_LOG) as f:
         for row in csv.reader(f):
@@ -192,9 +198,9 @@ def _too_soon(acc: Account) -> float:
             if newest is None or ts > newest:
                 newest = ts
     if newest is None:
-        return 0.0
+        return wait          # no history yet, but the window still applies
     waited = (datetime.now(_PT) - newest).total_seconds() / 3600
-    return max(0.0, gap - waited)
+    return max(0.0, wait, gap - waited)
 
 
 def _queue_add(items: list[dict]):

@@ -14,6 +14,7 @@ cross-posts. The bot picks it up on the next hourly run.
 import json
 import os
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).parent
@@ -58,6 +59,14 @@ class Account:
                       "original story", "minecraft", "parkour")
     yt_hashtags: str = "#shorts #storytime #shortstory #fiction #fyp"
     ig_hashtags: str = "#reels #fyp #storytime"
+    # Preferred posting hours, in the BOX'S LOCAL TIME (ET on the playbox) --
+    # deliberately not Pacific. The Pacific quota day is a YouTube accounting
+    # detail; this is about when the audience is awake, so it follows the clock
+    # a human reads. post_before_hour is exclusive, and a window may wrap
+    # midnight (22 -> 4). Leave both at 0 for "any hour", which is the old
+    # behaviour exactly.
+    post_after_hour: int = 0
+    post_before_hour: int = 0
     # data files (namespaced per account; default = legacy paths)
     post_log: str = "output/post_log.csv"
     queue_file: str = "output/post_queue/queue.json"
@@ -180,6 +189,45 @@ def expected_gap_hours(acc: Account) -> float:
     return 24.0 / t
 
 
+def post_window(acc: Account) -> tuple[int, int] | None:
+    """(after, before) in local hours, or None when the channel has no window."""
+    a = int(getattr(acc, "post_after_hour", 0) or 0)
+    b = int(getattr(acc, "post_before_hour", 0) or 0)
+    return None if a == b else (a % 24, b % 24)
+
+
+def window_hours(acc: Account) -> float:
+    """Width of the posting window in hours (24 when unset)."""
+    w = post_window(acc)
+    if not w:
+        return 24.0
+    a, b = w
+    return float(b - a) if b > a else float(24 - a + b)
+
+
+def in_window(acc: Account, now=None) -> bool:
+    w = post_window(acc)
+    if not w:
+        return True
+    a, b = w
+    h = (now or datetime.now().astimezone()).hour
+    return a <= h < b if a < b else (h >= a or h < b)
+
+
+def hours_until_window(acc: Account, now=None) -> float:
+    """Hours until this channel's window opens; 0 if it is open now."""
+    w = post_window(acc)
+    if not w:
+        return 0.0
+    now = now or datetime.now().astimezone()
+    if in_window(acc, now):
+        return 0.0
+    nxt = now.replace(hour=w[0], minute=0, second=0, microsecond=0)
+    if nxt <= now:
+        nxt += timedelta(days=1)
+    return (nxt - now).total_seconds() / 3600
+
+
 def post_gap_hours(acc: Account) -> float:
     """How long this channel must wait between posts.
 
@@ -189,6 +237,13 @@ def post_gap_hours(acc: Account) -> float:
     """
     if acc.min_gap_hours:
         return float(acc.min_gap_hours)
+    # With a window, spread across the WINDOW, not the day. Keeping 20/target
+    # here would push post 2 of a 12:00-21:00 channel to 22:00 -- outside its
+    # own window, so it would wait for the next opening and the channel would
+    # quietly drop to one post a day.
+    w = window_hours(acc)
+    if w < 24 and acc.daily_target and acc.daily_target > 1:
+        return w / acc.daily_target
     if acc.daily_target and acc.daily_target > 1:
         return 20.0 / acc.daily_target
     return 0.0

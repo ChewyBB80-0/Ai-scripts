@@ -1,48 +1,52 @@
 [
-  {
-    "id": "parkourflux",
-    "name": "ParkourFlux AI",
-    "enabled": true,
-    "handle": "@ParkourFlux",
-    "genres": [
-      "aitah",
-      "confession",
-      "revenge",
-      "creepy"
-    ],
-    "yt_token": "token.json",
-    "footage_dir": "footage",
-    "logo": "branding/logo.png",
-    "daily_target": 1,
-    "ig_enabled": true
-  },
-  {
-    "id": "carveteran",
-    "name": "The Car Veteran",
-    "enabled": true,
-    "handle": "@thecarveteran",
-    "genres": [
-      "revenge"
-    ],
-    "yt_token": "token_carveteran.json",
-    "footage_dir": "footage",
-    "logo": "branding/logo_carveteran.png",
-    "daily_target": 2,
-    "ig_enabled": true,
-    "content_type": "dialogue",
-    "yt_tags": [
-      "shorts",
-      "car maintenance",
-      "car tips",
-      "save money on car repairs",
-      "mechanic advice",
-      "car advice",
-      "auto repair"
-    ],
-    "yt_hashtags": "#shorts #carmaintenance #cartips #mechanic #savemoney",
-    "ig_hashtags": "#reels #fyp #cartips #carmaintenance #mechanic #savemoney",
-    "post_log": "output/carveteran/post_log.csv",
-    "queue_file": "output/carveteran/post_queue/queue.json",
-    "out_dir": "output/carveteran"
-  }
+ {
+  "id": "parkourflux",
+  "name": "ParkourFlux AI",
+  "enabled": true,
+  "handle": "@ParkourFlux",
+  "genres": [
+   "aitah",
+   "confession",
+   "revenge",
+   "creepy"
+  ],
+  "yt_token": "token.json",
+  "footage_dir": "footage",
+  "logo": "branding/logo.png",
+  "daily_target": 1,
+  "ig_enabled": true,
+  "post_after_hour": 15,
+  "post_before_hour": 21
+ },
+ {
+  "id": "carveteran",
+  "name": "The Car Veteran",
+  "enabled": true,
+  "handle": "@thecarveteran",
+  "genres": [
+   "revenge"
+  ],
+  "yt_token": "token_carveteran.json",
+  "footage_dir": "footage",
+  "logo": "branding/logo_carveteran.png",
+  "daily_target": 2,
+  "ig_enabled": true,
+  "content_type": "dialogue",
+  "yt_tags": [
+   "shorts",
+   "car maintenance",
+   "car tips",
+   "save money on car repairs",
+   "mechanic advice",
+   "car advice",
+   "auto repair"
+  ],
+  "yt_hashtags": "#shorts #carmaintenance #cartips #mechanic #savemoney",
+  "ig_hashtags": "#reels #fyp #cartips #carmaintenance #mechanic #savemoney",
+  "post_log": "output/carveteran/post_log.csv",
+  "queue_file": "output/carveteran/post_queue/queue.json",
+  "out_dir": "output/carveteran",
+  "post_after_hour": 12,
+  "post_before_hour": 21
+ }
 ]
