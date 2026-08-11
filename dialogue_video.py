@@ -36,7 +36,23 @@ ROOT = Path(__file__).parent
 # account's out_dir -- so hand-run renders landed somewhere the pipeline could
 # not see. The topic dedup reads the account's directory, so six earlier
 # episodes were invisible to it and their subjects could be chosen again.
-OUT = ROOT / "output" / "carveteran"
+def _default_account():
+    """The first DIALOGUE account, or None. Fallback only -- bot passes the
+    account's own out_dir, handle and logo. Resolving it rather than hardcoding
+    the car channel means a third two-voice channel calling render() bare does
+    not quietly write into, and brand itself as, channel 2."""
+    try:
+        from accounts import all_accounts
+        for a in all_accounts():
+            if getattr(a, "content_type", "") == "dialogue":
+                return a
+    except Exception:
+        pass
+    return None
+
+
+_DEF = _default_account()
+OUT = (ROOT / _DEF.out_dir) if _DEF else (ROOT / "output" / "carveteran")
 
 # --- the cast ---------------------------------------------------------------
 # Original characters, deliberately archetypes rather than identifiable models:
@@ -372,12 +388,14 @@ def render(script: dict, footage: list[Path], out: Path | None = None,
         card = str(OUT_ / f"{stem}_card.png")
         build_hook_card(format_hook_for_display(script.get("title") or script["topic"]),
                         card,
-                        handle=handle or "@thecarveteran",
+                        handle=(handle or (_DEF.handle if _DEF else
+                                           "@thecarveteran")),
                         # Resolved here rather than by the caller: accounts.json
                         # stores logo as a repo-relative path, and this renders
                         # from whatever CWD the scheduler happened to use.
-                        avatar_path=str(ROOT / (avatar or
-                                                "branding/logo_carveteran.png")))
+                        avatar_path=str(ROOT / (
+                            avatar or (_DEF.logo if _DEF else "")
+                            or "branding/logo_carveteran.png")))
         first = next((b for _, _, a, b in spans[:1]), None)
         card_seconds = (first / 1000 + 0.4) if first else 3.5
     except Exception as e:

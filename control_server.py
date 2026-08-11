@@ -340,7 +340,14 @@ def _t_coverage(inp):
 def _t_tiktok(inp):
     """Cross-post already-rendered videos to TikTok drafts."""
     import tiktok_upload
-    out = ROOT / "output"
+    # DELIBERATELY one channel's renders, not every channel's. There is a single
+    # TikTok connection and it belongs to the first account, so widening this to
+    # scan all out_dirs would push car episodes to the story channel's TikTok --
+    # the same cross-channel leak that put GTA footage on ParkourFlux. When a
+    # second TikTok account exists, this needs an account argument, not a wider
+    # glob.
+    from accounts import all_accounts
+    out = ROOT / all_accounts()[0].out_dir
     name = (inp.get("filename") or "").strip()
     if name:
         vid = out / name
