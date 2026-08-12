@@ -288,7 +288,7 @@ def _assert_may_post():
             f"Deliberate one-off? Set MEDIAMAKER_ALLOW_POST=1 for this run.")
 
 
-def _post_video(path: str | Path, title: str, acc: Account | None = None,
+def _post_video(path: str | Path, title: str, acc: Account,
                 platforms=None, publish_at: str | None = None):
     """Post one rendered video. platforms: subset of {'youtube','instagram'}
     (default both). The two platforms are posted independently -- a failure on
@@ -299,7 +299,21 @@ def _post_video(path: str | Path, title: str, acc: Account | None = None,
     what was asked for: each block is gated on config flags, account settings
     and a dedup check, and skipping is silent. Callers that report on the
     outcome must use this rather than assume the request succeeded."""
-    acc = acc or Account()
+    # NO DEFAULT. This used to be `acc = acc or Account()`, and Account()'s
+    # dataclass defaults ARE the first channel: its handle, its token, its
+    # post log, its Instagram credentials. So any caller that forgot the
+    # account silently published under the wrong identity instead of failing.
+    #
+    # coverage_check.fix() forgot it. On 2026-08-12 it took a car episode and
+    # posted it to the story channel's Instagram -- succeeded, reported
+    # "Fixed 1", and logged the row to the story channel's post log, which is
+    # why the car channel still showed the gap and the retry looked like a
+    # silent failure. It was the opposite of a failure: it worked, on the
+    # wrong account.
+    if acc is None:
+        raise ValueError(
+            "_post_video requires an account. Defaulting silently published "
+            "one channel's video under another channel's credentials.")
     base = Path(path).stem
     platforms = _norm_platforms(platforms)
     _assert_may_post()

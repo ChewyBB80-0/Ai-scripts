@@ -25,6 +25,7 @@ ROOT = Path(__file__).parent
 # callers and the bare CLI behave exactly as before; use_account() repoints it.
 LOG = ROOT / "output" / "post_log.csv"
 OUT = ROOT / "output"
+ACCOUNT = None
 
 
 def use_account(acc_id: str = "") -> str:
@@ -34,13 +35,14 @@ def use_account(acc_id: str = "") -> str:
     while this reads the story channel's log, which is the exact failure the
     checker exists to catch.
     """
-    global LOG, OUT
+    global LOG, OUT, ACCOUNT
     import sys as _sys
     _sys.path.insert(0, str(ROOT))
     from accounts import all_accounts, get_account, paths
     acc = get_account(acc_id) if acc_id else all_accounts()[0]
     LOG = paths(acc)["post_log"]
     OUT = paths(acc)["out_dir"]
+    ACCOUNT = acc
     return acc.name
 
 # statuses that mean "this story is on YouTube" -- scheduled counts, the upload
@@ -249,6 +251,14 @@ def fix(days: int | None = None, dry_run: bool = False) -> str:
     if dry_run:
         return "Would post: " + ", ".join(f"{s} -> {p}" for s, p in holes)
     import bot
+    if ACCOUNT is None:
+        use_account()
+    # Both halves must follow the account. Passing the account alone is not
+    # enough: _post_video appends to bot.POST_LOG, a module global that still
+    # points at the first channel, so a car post would be recorded in the story
+    # channel's log -- the gap would stay open and the next --fix would post it
+    # all over again.
+    bot.POST_LOG = LOG
     done, failed = [], []
     for stem, missing in holes:
         video = OUT / f"{stem}.mp4"
@@ -260,7 +270,8 @@ def fix(days: int | None = None, dry_run: bool = False) -> str:
             # silently when a config flag, account setting or its own dedup
             # says no -- this used to be counted as a success and reported
             # "Fixed", for videos that were never touched.
-            posted = bot._post_video(video, _title_for(stem), platforms=missing)
+            posted = bot._post_video(video, _title_for(stem), ACCOUNT,
+                                     platforms=missing)
             if missing in (posted or set()):
                 done.append(f"{stem} -> {missing}")
             else:
