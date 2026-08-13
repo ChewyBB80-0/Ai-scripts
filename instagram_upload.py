@@ -66,7 +66,12 @@ def post_reel(video_url: str, caption: str = "", share_to_feed: bool = True,
         failed = None
         while time.time() < deadline:
             s = requests.get(f"{GRAPH}/{container_id}",
-                             params={"fields": "status_code", "access_token": token})
+                             # ASK WHY. status_code is only ever FINISHED /
+                             # IN_PROGRESS / ERROR; `status` carries the actual
+                             # reason. Two failures were investigated blind
+                             # because the code discarded it.
+                             params={"fields": "status_code,status",
+                                     "access_token": token})
             s.raise_for_status()
             status = s.json().get("status_code")
             if status == "FINISHED":
