@@ -381,26 +381,34 @@ def _post_video(path: str | Path, title: str, acc: Account,
             caption = capf.read_text(encoding="utf-8") if capf.exists() else \
                 f"{title}\n\n{acc.ig_hashtags}"
             url = upload_public(path)
-            post_reel(url, caption=caption, ig_user=acc.ig_user_id, token=acc.ig_token)
-            log_post(base, None, "posted_instagram")
-            print(f"Cross-posted to Instagram: {base}")
-            # Also drop it on the Story (cross-promo to existing followers,
-            # pushes them to the Reel). Must run BEFORE delete_hosted -- the
-            # Story container re-pulls the same URL. Never blocks the Reel: a
-            # Story failure is logged and the run continues. Stories cap at 60s.
-            if getattr(config, "POST_TO_IG_STORY", False):
-                dur = _video_seconds(path)
-                if dur and dur > 60:
-                    print(f"Skipped Story (video {dur:.0f}s > 60s limit): {base}")
-                else:
-                    try:
-                        post_story(url, ig_user=acc.ig_user_id, token=acc.ig_token)
-                        print(f"Added to Instagram Story: {base}")
-                    except Exception as se:
-                        log_error(f"Instagram Story failed for {base}: {se}")
-                        print(f"Story post failed (Reel unaffected): {se}")
-            # IG has now pulled the file (Reel + Story) -> remove it from R2.
-            delete_hosted(path)
+            try:
+                post_reel(url, caption=caption, ig_user=acc.ig_user_id,
+                          token=acc.ig_token)
+                log_post(base, None, "posted_instagram")
+                print(f"Cross-posted to Instagram: {base}")
+                # Also drop it on the Story (cross-promo to existing followers,
+                # pushes them to the Reel). Must run BEFORE the R2 cleanup --
+                # the Story container re-pulls the same URL. Never blocks the
+                # Reel: a Story failure is logged and the run continues.
+                # Stories cap at 60s.
+                if getattr(config, "POST_TO_IG_STORY", False):
+                    dur = _video_seconds(path)
+                    if dur and dur > 60:
+                        print(f"Skipped Story (video {dur:.0f}s > 60s limit): {base}")
+                    else:
+                        try:
+                            post_story(url, ig_user=acc.ig_user_id,
+                                       token=acc.ig_token)
+                            print(f"Added to Instagram Story: {base}")
+                        except Exception as se:
+                            log_error(f"Instagram Story failed for {base}: {se}")
+                            print(f"Story post failed (Reel unaffected): {se}")
+            finally:
+                # ALWAYS remove the hosted copy, success or failure. This used
+                # to sit after post_reel inside the outer try, so a failed post
+                # skipped it and left the video publicly fetchable on R2 with
+                # nothing referencing it -- and nothing else ever cleans it up.
+                delete_hosted(path)
             _did.add("instagram")
         except Exception as e:
             log_error(f"Instagram cross-post failed for {base}: {e}")

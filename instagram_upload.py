@@ -28,37 +28,66 @@ GRAPH = "https://graph.instagram.com/v21.0"
 
 def post_reel(video_url: str, caption: str = "", share_to_feed: bool = True,
               timeout_s: int = 300, ig_user: str | None = None,
-              token: str | None = None) -> str:
+              token: str | None = None, attempts: int = 2) -> str:
     """Publish a Reel from a public video URL; returns the IG media id.
-    ig_user/token override the env vars (multi-account)."""
+    ig_user/token override the env vars (multi-account).
+
+    A container that comes back ERROR is retried once. Instagram's media
+    processing fails intermittently on files it accepts perfectly well a minute
+    later: car_headlight_restoration_vs_replacement failed on 2026-08-12 with a
+    plain {'status_code': 'ERROR'}, and the video was ordinary -- 1080x1920
+    h264/aac, a LOWER bitrate than the episode that posted fine four hours
+    after it.
+
+    Retrying here is safe and worth doing. Safe, because an ERROR container was
+    never published, so a new one cannot duplicate anything -- and the caller's
+    dedup runs before we are called. Worth doing, because the alternative path
+    is a human running `coverage_check --fix` by hand, which is how a car
+    episode ended up on the story channel's Instagram.
+    """
     ig_user = ig_user or os.environ["IG_USER_ID"]
     token = token or os.environ["IG_ACCESS_TOKEN"]
 
-    # 1. Create the media container -- Instagram fetches the video itself.
-    r = requests.post(f"{GRAPH}/{ig_user}/media", data={
-        "media_type": "REELS",
-        "video_url": video_url,
-        "caption": caption,
-        "share_to_feed": "true" if share_to_feed else "false",
-        "access_token": token,
-    })
-    r.raise_for_status()
-    container_id = r.json()["id"]
+    container_id = None
+    for attempt in range(1, max(1, attempts) + 1):
+        # 1. Create the media container -- Instagram fetches the video itself.
+        r = requests.post(f"{GRAPH}/{ig_user}/media", data={
+            "media_type": "REELS",
+            "video_url": video_url,
+            "caption": caption,
+            "share_to_feed": "true" if share_to_feed else "false",
+            "access_token": token,
+        })
+        r.raise_for_status()
+        container_id = r.json()["id"]
 
-    # 2. Poll until Instagram finishes downloading/processing the video.
-    deadline = time.time() + timeout_s
-    while time.time() < deadline:
-        s = requests.get(f"{GRAPH}/{container_id}",
-                         params={"fields": "status_code", "access_token": token})
-        s.raise_for_status()
-        status = s.json().get("status_code")
-        if status == "FINISHED":
-            break
-        if status == "ERROR":
-            raise RuntimeError(f"Instagram rejected the container: {s.json()}")
-        time.sleep(5)
-    else:
-        raise TimeoutError("Instagram container did not finish processing in time.")
+        # 2. Poll until Instagram finishes downloading/processing the video.
+        deadline = time.time() + timeout_s
+        failed = None
+        while time.time() < deadline:
+            s = requests.get(f"{GRAPH}/{container_id}",
+                             params={"fields": "status_code", "access_token": token})
+            s.raise_for_status()
+            status = s.json().get("status_code")
+            if status == "FINISHED":
+                break
+            if status == "ERROR":
+                failed = s.json()
+                break
+            time.sleep(5)
+        else:
+            # A timeout is NOT retried: the container may still be processing,
+            # and creating a second one risks two Reels from one call.
+            raise TimeoutError(
+                "Instagram container did not finish processing in time.")
+
+        if failed is None:
+            break                       # FINISHED -- go publish it
+        if attempt >= attempts:
+            raise RuntimeError(f"Instagram rejected the container: {failed}")
+        print(f"Instagram rejected the container (attempt {attempt}/{attempts}): "
+              f"{failed} -- retrying in 30s")
+        time.sleep(30)
 
     # 3. Publish.
     p = requests.post(f"{GRAPH}/{ig_user}/media_publish", data={
