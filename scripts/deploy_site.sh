@@ -1,104 +1,14 @@
 #!/usr/bin/env bash
-# Deploy site/ to Cloudflare Pages.
+# Publish site/ to the parkourflux Pages project.
 #
-# Only needed while the Pages project is NOT connected to this GitHub repo. A
-# Git-connected project deploys every push on its own and this script becomes
-# dead weight -- prefer that, and delete this, if the connection ever works.
+# This project is DIRECT-UPLOAD, not git-connected: it was created with wrangler
+# so the domain could match the TikTok app name without waiting on the
+# dashboard. That means pushes do NOT auto-deploy -- run this after changing
+# anything under site/.
 #
-# The project name is deliberately hardcoded. parkourflux-policy.pages.dev is
-# registered as the OAuth redirect URI in the TikTok developer portal and is
-# hardcoded at tiktok_upload.py:23, so deploying under a different name would
-# silently break authorisation rather than the site.
-#
-#   CLOUDFLARE_API_TOKEN   scoped to Account -> Cloudflare Pages -> Edit
-#   CLOUDFLARE_ACCOUNT_ID  from the Workers & Pages overview page
-#
-# Both are read from ~/media_maker/.env. The token is never printed.
-#
-#   bash scripts/deploy_site.sh
+# The old parkourflux-policy project was git-connected and auto-deployed, which
+# is how a broken build command sat unnoticed for three days while the live site
+# stayed frozen. Manual and visible is not obviously worse.
 set -euo pipefail
-
 cd "$(dirname "$0")/.."
-PROJECT="parkourflux-policy"
-
-if [ -f .env ]; then
-    set -a
-    # shellcheck disable=SC1091
-    . ./.env
-    set +a
-fi
-
-if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
-    cat >&2 <<'MSG'
-CLOUDFLARE_API_TOKEN is not set.
-
-Create one at: Cloudflare dashboard -> My Profile -> API Tokens ->
-Create Token -> Custom token, with the single permission:
-
-    Account -> Cloudflare Pages -> Edit
-
-Then append it to ~/media_maker/.env (chmod 600, gitignored):
-
-    CLOUDFLARE_API_TOKEN=...
-    CLOUDFLARE_ACCOUNT_ID=...
-MSG
-    exit 1
-fi
-
-if [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
-    echo "CLOUDFLARE_ACCOUNT_ID is not set (right-hand side of Workers & Pages)." >&2
-    exit 1
-fi
-
-# Fail before uploading rather than publishing a half-finished site.
-missing=0
-for f in index.html how-it-works.html tiktok.html privacy.html terms.html \
-         callback.html style.css; do
-    [ -f "site/$f" ] || { echo "site/$f is missing" >&2; missing=1; }
-done
-[ "$missing" -eq 0 ] || exit 1
-
-if grep -rq "REPLACE-WITH" site/*.html; then
-    echo "site/ still contains REPLACE-WITH placeholders -- fix before deploying." >&2
-    exit 1
-fi
-
-echo "Deploying site/ to ${PROJECT}.pages.dev ..."
-npx --yes wrangler@latest pages deploy site \
-    --project-name="$PROJECT" \
-    --branch=main \
-    --commit-dirty=true
-
-echo
-echo "Verifying the live routes ..."
-sleep 5
-fail=0
-for p in / /how-it-works /tiktok /privacy /terms /callback /style.css; do
-    # -L: Pages 308s to the canonical path while a deploy propagates, which is
-    # correct behaviour, not a broken route. Judge the destination.
-    # 2>/dev/null: the snap build of curl prints a multi-line sandbox warning to
-    # stderr on every single call, which buried the actual results.
-    code=$(curl -sL -o /dev/null -w '%{http_code}' --max-time 20 \
-           "https://${PROJECT}.pages.dev${p}?v=$$" 2>/dev/null || echo 000)
-    printf '  %-14s %s\n' "$p" "$code"
-    [ "$code" = "200" ] || fail=1
-done
-
-# /callback is the one that breaks TikTok auth rather than just looking wrong.
-#
-# Check for the CODE THAT READS the parameter, not for the parameter appearing
-# in the response. callback.html injects it client-side via URLSearchParams, so
-# curl -- which runs no JavaScript -- can never see the value. The first
-# version of this grepped for the echoed code and therefore failed on every
-# deploy including a perfectly good one. A check that always fails gets
-# ignored, and then it is worse than no check.
-if curl -sL --max-time 20 "https://${PROJECT}.pages.dev/callback" 2>/dev/null \
-   | grep -q "URLSearchParams"; then
-    echo "  callback serves its code-reading script  OK"
-else
-    echo "  callback is missing its URLSearchParams handler -- TikTok auth" >&2
-    echo "  would return a code the page cannot display. Check before re-auth." >&2
-    fail=1
-fi
-
-[ "$fail" -eq 0 ] && echo "Done." || { echo "Some checks failed." >&2; exit 1; }
+npx --yes wrangler@latest pages deploy site --project-name parkourflux --branch main --commit-dirty=true

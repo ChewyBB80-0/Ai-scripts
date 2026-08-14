@@ -20,7 +20,7 @@ from pathlib import Path
 
 import requests
 
-REDIRECT_URI = "https://parkourflux-policy.pages.dev/callback"
+REDIRECT_URI = "https://parkourflux.pages.dev/callback"
 SCOPES = "user.info.basic,video.upload"
 TOKEN_FILE = Path(__file__).parent / "tiktok_token.json"
 
@@ -70,7 +70,7 @@ def authorize():
     })
     print("\n1. Open this URL and authorize your TikTok account:\n")
     print(url)
-    print("\n2. You'll land on parkourflux-policy.pages.dev/callback -- that page "
+    print("\n2. You'll land on parkourflux.pages.dev/callback -- that page "
           "shows a 'code'. Copy it.\n")
     try:
         webbrowser.open(url)
