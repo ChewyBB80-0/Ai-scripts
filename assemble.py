@@ -105,10 +105,30 @@ def _extract_segment(src: Path, start: float, dur: float, width: int, height: in
 
 def _build_track(paths: list[Path], duration: float, width: int, height: int,
                  tmp_dir: Path, tag: str, cut_min: float, cut_max: float) -> Path:
-    """Stitch short random segments from random clips into one fast-cut track."""
+    """Stitch short random segments from random clips into one fast-cut track.
+
+    Clips are drawn WITHOUT replacement: the pool is shuffled and exhausted
+    before any clip repeats. It used to be random.choice() per segment, an
+    independent draw each time, which meant a clip could be picked three times
+    in one video while others were never touched at all. With ~13 segments
+    against 15 clips, any given clip had roughly a 40% chance of not appearing
+    in a given video -- so footage that had been deliberately added could sit
+    unused while the same few shots recurred.
+
+    On a reshuffle the first clip out is swapped if it would repeat the one
+    just used, so a pool boundary cannot produce a back-to-back duplicate.
+    """
     segs, total, i = [], 0.0, 0
+    pool: list = []
+    last = None
     while total < duration + 1.0:
-        src = Path(random.choice(paths))
+        if not pool:
+            pool = list(paths)
+            random.shuffle(pool)
+            if last is not None and len(pool) > 1 and pool[-1] == last:
+                pool[-1], pool[0] = pool[0], pool[-1]
+        src = Path(pool.pop())
+        last = src
         clip_dur = get_duration_seconds(src)
         seg = random.uniform(cut_min, cut_max)
         if clip_dur <= seg + 0.5:
