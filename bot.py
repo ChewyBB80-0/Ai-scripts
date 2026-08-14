@@ -290,7 +290,7 @@ def _assert_may_post():
 
 def _post_video(path: str | Path, title: str, acc: Account,
                 platforms=None, publish_at: str | None = None,
-                lead: str = ""):
+                lead: str = "", credit: str = ""):
     """Post one rendered video. platforms: subset of {'youtube','instagram'}
     (default both). The two platforms are posted independently -- a failure on
     one never blocks the other. publish_at (RFC3339 UTC): schedule the YouTube
@@ -350,6 +350,7 @@ def _post_video(path: str | Path, title: str, acc: Account,
                 description="\n\n".join(
                     part for part in (lead.strip(), _note,
                                       getattr(acc, "promo_yt", ""),
+                                      credit.strip(),
                                       acc.yt_hashtags) if part).strip(),
                 tags=list(acc.yt_tags),
                 privacy_status=config.PRIVACY_STATUS,
@@ -512,6 +513,48 @@ def _video_seconds(path: str | Path) -> float:
         return float(r.stdout.strip())
     except Exception:
         return 0.0
+
+
+def _footage_credit(clips) -> str:
+    """Attribution line for the footage set this video was cut from, or "".
+
+    Reads CREDIT.txt from the folder the clips came from. Creative Commons
+    footage is free to reuse but NOT unattributed -- CC BY requires crediting
+    the creator, and a channel working toward monetisation should not be
+    quietly failing a licence condition on footage it chose to use.
+
+    Keyed on the folder rather than the account so a channel can mix owned and
+    licensed sets: the credit appears only on videos actually cut from the
+    licensed one. Any future footage folder gets the same treatment by dropping
+    a CREDIT.txt beside the clips.
+    """
+    if not clips:
+        return ""
+    try:
+        f = Path(clips[0]).parent / "CREDIT.txt"
+        return f.read_text(encoding="utf-8").strip() if f.exists() else ""
+    except Exception:
+        return ""
+
+
+def _credit_for_stem(acc: Account, stem: str) -> str:
+    """Attribution for an ALREADY-RENDERED video, recovered from video_attrs.
+
+    The manual --post-file path has no clip list in scope, and omitting a
+    required credit is a licence breach whether or not the omission was
+    convenient. video_attrs records background_set at render time, which is
+    exactly the folder to look in.
+    """
+    try:
+        import video_attrs
+        from accounts import footage_root
+        row = video_attrs.load().get(stem) or {}
+        s = row.get("background_set")
+        if not s:
+            return ""
+        return _footage_credit([footage_root(acc) / s / "x.mp4"])
+    except Exception:
+        return ""
 
 
 def _yt_posted() -> set[str]:
@@ -757,7 +800,8 @@ def _run_dialogue(acc: Account, topic_hint: str = "", force: bool = False,
         print(f"[{acc.id}] REVIEW_MODE -- rendered but not posted: {path}")
         return
     did = _post_video(path, script["title"], acc=acc, platforms=platforms,
-                      lead=_standalone_payoff(script))
+                      lead=_standalone_payoff(script),
+                      credit=_footage_credit(clips))
     print(f"[{acc.id}] posted to: {sorted(did) or 'NOTHING'}")
 
 
@@ -835,7 +879,8 @@ def run_once(background_dir: str | None = None, topic_hint: str = "",
                 # on the queue item), not the current run's default.
                 _post_video(due["file"], due["title"], acc,
                             due.get("platforms") or platforms,
-                            lead=due.get("lead", ""))
+                            lead=due.get("lead", ""),
+                            credit=due.get("credit", ""))
                 return
             # Priority 2: start a new story only if under the daily target. A
             # whole saga counts as one story here (its base title).
@@ -1158,7 +1203,7 @@ def run_once(background_dir: str | None = None, topic_hint: str = "",
     total = parts[0]["total_parts"]
     first_title = title_text if total == 1 else f"{title_text} (Part 1)"
     _post_video(out_paths[0], first_title, acc, platforms, publish_at,
-                lead=hook)
+                lead=hook, credit=_footage_credit(footage_files))
     if len(parts) > 1:
         interval = timedelta(hours=config.PART_INTERVAL_HOURS)
         if publish_at:
@@ -1170,7 +1215,8 @@ def run_once(background_dir: str | None = None, topic_hint: str = "",
             for p, op in zip(parts[1:], out_paths[1:]):
                 pa = (base + interval * (p["part"] - 1)).strftime("%Y-%m-%dT%H:%M:%SZ")
                 _post_video(op, f"{title_text} (Part {p['part']})", acc,
-                            platforms, pa, lead=hook)
+                            platforms, pa, lead=hook,
+                            credit=_footage_credit(footage_files))
         else:
             # Immediate saga: part 1 is already live, so drip parts 2+ one per
             # PART_INTERVAL_HOURS -- always after part 1, so still in order.
@@ -1187,6 +1233,7 @@ def run_once(background_dir: str | None = None, topic_hint: str = "",
                     # is the only thing that survives to that point -- the
                     # story object is long gone by then.
                     "lead": hook,
+                    "credit": _footage_credit(footage_files),
                 }
                 for p, op in zip(parts[1:], out_paths[1:])
             ])
@@ -1250,7 +1297,8 @@ if __name__ == "__main__":
             except Exception as _e:
                 print(f"[{acc.id}] caption fallback ({_e})")
         did = _post_video(args.post_file, args.title, acc=acc,
-                          platforms=args.platform, lead=_lead)
+                          platforms=args.platform, lead=_lead,
+                          credit=_credit_for_stem(acc, _p.stem))
         print(f"[{acc.id}] posted to: {sorted(did) or 'NOTHING'}")
         raise SystemExit(0)
     if args.schedule_at:
