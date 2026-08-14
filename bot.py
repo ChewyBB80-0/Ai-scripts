@@ -572,13 +572,16 @@ def _gifts_available(acc: Account) -> bool:
         return False
 
 
-# Openers that make a line depend on the one before it. A caption's first
-# visible line has no "before it".
+# Bare answers to a question the caption does not contain. Deliberately SHORT:
+# a wider list did more harm than good. "That's forty bucks back in your
+# pocket" opens with a pointer but reads perfectly well as a first line,
+# because the title supplies what it points at -- excluding it swapped a good
+# caption for a worse one on two episodes. Only openers that genuinely cannot
+# parse alone belong here.
 _DEPENDENT_OPENERS = (
-    "it is", "it's", "its ", "that is", "that's", "thats ", "this is",
     "exactly", "yeah", "yep", "yes,", "no,", "nope", "right,", "correct",
-    "sure", "then ", "and ", "but ", "so ", "because ", "which ", "same ",
-    "either ", "both ", "not always", "maybe not", "probably not",
+    "sure,", "it is,", "it isn't", "it is not", "maybe not", "not always",
+    "probably not", "same ", "either ", "both ",
 )
 
 
