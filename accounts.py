@@ -59,6 +59,13 @@ class Account:
                       "original story", "minecraft", "parkour")
     yt_hashtags: str = "#shorts #storytime #shortstory #fiction #fyp"
     ig_hashtags: str = "#reels #fyp #storytime"
+    # Store promo appended to the caption / description. Per-platform because
+    # the two discount codes exist to tell which surface actually converts —
+    # sharing one code across both would throw that away, and attribution is
+    # the only reason to run a code at all on this volume. Empty by default:
+    # a channel with nothing to sell should not be asking.
+    promo_ig: str = ""
+    promo_yt: str = ""
     # Preferred posting hours, in the BOX'S LOCAL TIME (ET on the playbox) --
     # deliberately not Pacific. The Pacific quota day is a YouTube accounting
     # detail; this is about when the audience is awake, so it follows the clock

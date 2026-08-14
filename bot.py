@@ -336,7 +336,9 @@ def _post_video(path: str | Path, title: str, acc: Account,
                      if "fiction" in acc.yt_hashtags else "")
             video_id = upload_video(
                 str(path), title=title,
-                description=f"{_note}\n\n{acc.yt_hashtags}".strip(),
+                description="\n\n".join(
+                    part for part in (_note, getattr(acc, "promo_yt", ""),
+                                      acc.yt_hashtags) if part).strip(),
                 tags=list(acc.yt_tags),
                 privacy_status=config.PRIVACY_STATUS,
                 token_file=acc.yt_token,
@@ -563,10 +565,14 @@ def _dialogue_caption(acc: Account, script: dict) -> str:
                    if l["speaker"] == "VET"), "")
     gift = ("\n\nIf this saved you money, a ⭐ says thanks louder than a like."
             if _gifts_available(acc) else "")
+    # The promo sits AFTER the follow ask and before the hashtags. The ask is
+    # what this caption exists for; a sales line above it turns an explainer
+    # into an advert. Empty for any channel with nothing to sell.
+    promo = f"\n\n{acc.promo_ig}" if getattr(acc, "promo_ig", "") else ""
     return (f"{script['title']}\n\n{payoff}\n\n"
             f"Rusty and Sparky break down one dealership upsell at a time, so you "
             f"stop paying for work you can do yourself. Follow for the next one."
-            f"{gift}\n\n{acc.ig_hashtags}")
+            f"{gift}{promo}\n\n{acc.ig_hashtags}")
 
 
 def _used_topics(acc: Account | None = None, limit: int = 40) -> list[str]:

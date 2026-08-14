@@ -152,6 +152,22 @@ RULES:
   percentage). Specificity is what makes it feel true.
 - The information must be genuinely accurate and useful -- real, checkable car
   advice. Never invent a fake statistic.
+- SAFETY RAIL, and this one outranks the format. This channel's premise is
+  "don't let the shop overcharge you", which pulls every script toward telling
+  the viewer NOT to get something looked at. Sometimes paying is the correct
+  answer, and on a safety system being wrong hurts someone.
+  * If a symptom has BOTH a harmless and a dangerous cause, you must give the
+    test that tells them apart. Never present the harmless cause as what it
+    "usually" is and stop there.
+  * Never tell the viewer to ignore, wait out, or skip inspection of brakes,
+    steering, tyres, airbags, or anything else that stops or steers the car.
+    Saving money is the topic; the viewer's safety is the constraint.
+  * Real failure this rule exists for: an episode said a brake squeal is
+    "usually just surface rust", said to drive it off and not call the shop,
+    and never mentioned that pads have a metal wear indicator designed to
+    squeal exactly like that when they are nearly gone. A working mechanic
+    publicly replied that it was bad advice and would let someone cut into
+    their rotors. He was right.
 - VET gets the payoff line. End on ONE short line that either lands the money
   saved or baits a comment (e.g. "How many of you are guilty of this?").
 - Keep it PG. Dry humour, not insults.

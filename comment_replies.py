@@ -56,19 +56,62 @@ def _save_replied(acc: Account, ids: set):
     p.write_text(json.dumps(sorted(ids)))
 
 
+def _video_context(acc: Account) -> str:
+    """What this channel's videos ARE, for the reply prompt. Was the literal
+    string "one of our Reddit story videos" for every account."""
+    if getattr(acc, "content_type", "story") == "dialogue":
+        return "one of our short car-maintenance tip videos"
+    return "one of our short story videos"
+
+
+def _preview(platform: str, author: str, text: str, reply: str) -> None:
+    """Show the WHOLE comment. It used to truncate to 45 characters, and at that
+    length a mechanic's detailed rebuttal of the video's advice was
+    indistinguishable from a compliment -- which is exactly the case a human
+    needs to catch before enabling this. A preview you cannot judge from is
+    worse than no preview, because it looks like due diligence."""
+    print(f"[{platform} dry-run] {author.lstrip('@')}")
+    print(f"    COMMENT: {text.strip()}")
+    print(f"    REPLY  : {reply}")
+    print()
+
+
 # ---- reply generation -------------------------------------------------------
-def _generate_reply(comment_text: str, context: str, author: str) -> str | None:
-    """A short, warm, engagement-driving reply -- or None to skip (spam/hostile/
-    nothing to engage with)."""
+def _generate_reply(comment_text: str, context: str, author: str,
+                    acc: Account | None = None) -> str | None:
+    """A short, warm, engagement-driving reply -- or None to skip.
+
+    The SKIP rules below are the whole safety of this module, and both were
+    written after a dry run got both of its two real comments wrong.
+    """
     import anthropic
-    prompt = f"""You are the friendly voice of a Reddit-story video channel, replying to a viewer's comment.
+    # The persona follows the channel. This said "a Reddit-story video channel"
+    # for every account, which is the wrong voice on a car-advice channel.
+    if acc is not None and getattr(acc, "content_type", "story") == "dialogue":
+        who = (f"the voice of {acc.name}, a car-maintenance channel that tells "
+               "people what shops overcharge for")
+    else:
+        who = "the friendly voice of a short-story video channel"
+    author = author.lstrip("@")          # the handle already carries its own @
+    prompt = f"""You are {who}, replying to a viewer's comment.
 Video context: "{context}"
 Comment from @{author}: "{comment_text}"
 
 Write a SHORT reply (one sentence, under 120 characters) that is warm and human and invites more
 engagement -- react to their take, thank them, or ask a light follow-up question. Casual creator
 voice, at most one emoji. NEVER argue or get defensive.
-If the comment is spam, an ad, hateful, or has nothing worth engaging with, reply with exactly: SKIP
+
+Reply with exactly SKIP -- no other text -- if ANY of these apply:
+- Spam, an ad, or nothing worth engaging with.
+- The comment is hostile, insulting, mocking, or abusive, toward the channel or
+  anyone else. This includes a bare insult with no other content. Do NOT reply
+  playfully to an insult: a reply raises its visibility and invites more.
+- The comment DISPUTES OR CORRECTS the video's facts, or claims the advice is
+  wrong, unsafe, incomplete or dangerous -- however politely, and especially if
+  the commenter claims relevant expertise. A generated reply cannot judge who is
+  right, and thanking someone for a "tip" when they are actually saying the
+  video is wrong reads as the channel agreeing its own advice was bad. These
+  need a human. SKIP them.
 Output ONLY the reply text (or SKIP) -- no quotes, no other text."""
     r = anthropic.Anthropic().messages.create(
         model="claude-sonnet-5", max_tokens=80,
@@ -110,12 +153,12 @@ def reply_youtube(acc: Account, limit: int, dry_run: bool) -> int:
                     continue
                 text = snip.get("textOriginal", "")
                 author = snip.get("authorDisplayName", "viewer")
-                reply = _generate_reply(text, "one of our Reddit story videos", author)
+                reply = _generate_reply(text, _video_context(acc), author, acc)
                 if not reply:
                     replied.add(cid)
                     continue
                 if dry_run:
-                    print(f"[YT dry-run] @{author}: {text[:45]!r} -> {reply!r}")
+                    _preview("YT", author, text, reply)
                 else:
                     yt.comments().insert(part="snippet", body={
                         "snippet": {"parentId": item["id"], "textOriginal": reply}
@@ -158,12 +201,12 @@ def reply_instagram(acc: Account, limit: int, dry_run: bool) -> int:
                     continue
                 text = c.get("text", "")
                 author = c.get("username", "viewer")
-                reply = _generate_reply(text, (m.get("caption") or "")[:60], author)
+                reply = _generate_reply(text, (m.get("caption") or "")[:60], author, acc)
                 if not reply:
                     replied.add(cid)
                     continue
                 if dry_run:
-                    print(f"[IG dry-run] @{author}: {text[:45]!r} -> {reply!r}")
+                    _preview("IG", author, text, reply)
                 else:
                     rr = requests.post(f"{IG_GRAPH}/{cid}/replies",
                                        data={"message": reply, "access_token": token},
