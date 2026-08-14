@@ -70,8 +70,19 @@ def get_service(token_file: str | None = None):
     return build("youtube", "v3", credentials=creds)
 
 
-def set_privacy(video_id: str, privacy: str):
-    youtube = get_service()
+def set_privacy(video_id: str, privacy: str, account: str = ""):
+    # The channel that OWNS the video. videos().list resolves any public id, so
+    # without this the fetch succeeds and only the update fails -- and it fails
+    # on permissions, which reads like a scope problem rather than "you asked
+    # the wrong channel". Same first-account default that had to be removed
+    # from the post log, the stats, the coverage check and _post_video.
+    token = None
+    if account:
+        import sys as _sys
+        _sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        from accounts import get_account
+        token = get_account(account).yt_token
+    youtube = get_service(token)
     # snippet is required alongside status on update, so fetch current first
     current = youtube.videos().list(part="snippet,status", id=video_id).execute()
     if not current["items"]:
@@ -89,5 +100,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--video-id", required=True)
     ap.add_argument("--privacy", required=True, choices=["private", "unlisted", "public"])
+    ap.add_argument("--account", default="",
+                    help="channel id that owns the video (default: the main one)")
     args = ap.parse_args()
-    set_privacy(args.video_id, args.privacy)
+    set_privacy(args.video_id, args.privacy, args.account)
