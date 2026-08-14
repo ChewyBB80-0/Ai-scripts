@@ -289,7 +289,8 @@ def _assert_may_post():
 
 
 def _post_video(path: str | Path, title: str, acc: Account,
-                platforms=None, publish_at: str | None = None):
+                platforms=None, publish_at: str | None = None,
+                lead: str = ""):
     """Post one rendered video. platforms: subset of {'youtube','instagram'}
     (default both). The two platforms are posted independently -- a failure on
     one never blocks the other. publish_at (RFC3339 UTC): schedule the YouTube
@@ -340,8 +341,15 @@ def _post_video(path: str | Path, title: str, acc: Account,
                      if "fiction" in acc.yt_hashtags else "")
             video_id = upload_video(
                 str(path), title=title,
+                # LEAD FIRST. This description used to be the fiction
+                # disclaimer (story channel) or the sticker promo (car
+                # channel) followed by hashtags -- nothing describing the
+                # video at all. YouTube reads description text for search and
+                # suggestion, so a Short whose description never mentions its
+                # own subject wastes the one field that says what it is.
                 description="\n\n".join(
-                    part for part in (_note, getattr(acc, "promo_yt", ""),
+                    part for part in (lead.strip(), _note,
+                                      getattr(acc, "promo_yt", ""),
                                       acc.yt_hashtags) if part).strip(),
                 tags=list(acc.yt_tags),
                 privacy_status=config.PRIVACY_STATUS,
@@ -748,7 +756,8 @@ def _run_dialogue(acc: Account, topic_hint: str = "", force: bool = False,
     if config.REVIEW_MODE:
         print(f"[{acc.id}] REVIEW_MODE -- rendered but not posted: {path}")
         return
-    did = _post_video(path, script["title"], acc=acc, platforms=platforms)
+    did = _post_video(path, script["title"], acc=acc, platforms=platforms,
+                      lead=_standalone_payoff(script))
     print(f"[{acc.id}] posted to: {sorted(did) or 'NOTHING'}")
 
 
@@ -825,7 +834,8 @@ def run_once(background_dir: str | None = None, topic_hint: str = "",
                 # Post the later part to the SAME platform(s) part 1 used (stored
                 # on the queue item), not the current run's default.
                 _post_video(due["file"], due["title"], acc,
-                            due.get("platforms") or platforms)
+                            due.get("platforms") or platforms,
+                            lead=due.get("lead", ""))
                 return
             # Priority 2: start a new story only if under the daily target. A
             # whole saga counts as one story here (its base title).
@@ -1147,7 +1157,8 @@ def run_once(background_dir: str | None = None, topic_hint: str = "",
     title_text = format_hook_for_display(story.get("display_title") or hook)
     total = parts[0]["total_parts"]
     first_title = title_text if total == 1 else f"{title_text} (Part 1)"
-    _post_video(out_paths[0], first_title, acc, platforms, publish_at)
+    _post_video(out_paths[0], first_title, acc, platforms, publish_at,
+                lead=hook)
     if len(parts) > 1:
         interval = timedelta(hours=config.PART_INTERVAL_HOURS)
         if publish_at:
@@ -1158,7 +1169,8 @@ def run_once(background_dir: str | None = None, topic_hint: str = "",
             base = datetime.fromisoformat(publish_at.replace("Z", "+00:00"))
             for p, op in zip(parts[1:], out_paths[1:]):
                 pa = (base + interval * (p["part"] - 1)).strftime("%Y-%m-%dT%H:%M:%SZ")
-                _post_video(op, f"{title_text} (Part {p['part']})", acc, platforms, pa)
+                _post_video(op, f"{title_text} (Part {p['part']})", acc,
+                            platforms, pa, lead=hook)
         else:
             # Immediate saga: part 1 is already live, so drip parts 2+ one per
             # PART_INTERVAL_HOURS -- always after part 1, so still in order.
@@ -1170,6 +1182,11 @@ def run_once(background_dir: str | None = None, topic_hint: str = "",
                     "title": f"{title_text} (Part {p['part']})",
                     "post_after": (now + interval * (p["part"] - 1)).isoformat(),
                     "platforms": plats,
+                    # Carried so a part posted hours later still gets a
+                    # description that says what the video is about. The queue
+                    # is the only thing that survives to that point -- the
+                    # story object is long gone by then.
+                    "lead": hook,
                 }
                 for p, op in zip(parts[1:], out_paths[1:])
             ])
@@ -1219,16 +1236,21 @@ if __name__ == "__main__":
         _p = Path(args.post_file)
         _sj = _p.with_name(_p.stem + "_script.json")
         _capf = Path(acc.out_dir) / f"{_p.stem}_caption.txt"
-        if acc.content_type == "dialogue" and _sj.exists() and not _capf.exists():
+        _lead = ""
+        if acc.content_type == "dialogue" and _sj.exists():
             try:
-                _capf.write_text(
-                    _dialogue_caption(acc, json.loads(_sj.read_text(encoding="utf-8"))),
-                    encoding="utf-8")
-                print(f"[{acc.id}] caption written from {_sj.name}")
+                _script = json.loads(_sj.read_text(encoding="utf-8"))
+                # Same line the automated path puts at the top of the YouTube
+                # description, so a manual post is not left with a description
+                # that says nothing about the video.
+                _lead = _standalone_payoff(_script)
+                if not _capf.exists():
+                    _capf.write_text(_dialogue_caption(acc, _script), encoding="utf-8")
+                    print(f"[{acc.id}] caption written from {_sj.name}")
             except Exception as _e:
                 print(f"[{acc.id}] caption fallback ({_e})")
         did = _post_video(args.post_file, args.title, acc=acc,
-                          platforms=args.platform)
+                          platforms=args.platform, lead=_lead)
         print(f"[{acc.id}] posted to: {sorted(did) or 'NOTHING'}")
         raise SystemExit(0)
     if args.schedule_at:
