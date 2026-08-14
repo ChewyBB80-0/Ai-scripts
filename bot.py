@@ -572,6 +572,42 @@ def _gifts_available(acc: Account) -> bool:
         return False
 
 
+# Openers that make a line depend on the one before it. A caption's first
+# visible line has no "before it".
+_DEPENDENT_OPENERS = (
+    "it is", "it's", "its ", "that is", "that's", "thats ", "this is",
+    "exactly", "yeah", "yep", "yes,", "no,", "nope", "right,", "correct",
+    "sure", "then ", "and ", "but ", "so ", "because ", "which ", "same ",
+    "either ", "both ", "not always", "maybe not", "probably not",
+)
+
+
+def _standalone_payoff(script: dict) -> str:
+    """The VET line to lead the caption with -- one that reads on its own.
+
+    This used to be simply the LAST VET line, which is usually the closer and
+    usually fine. On the corrected brake episode it was "It is, and it is the
+    difference between a free glance and a six hundred dollar tow" -- a direct
+    answer to the rookie, so as the caption's opening line it began mid-
+    conversation with nothing to refer back to. That line is the ONLY part
+    Instagram shows before "more", so it is the whole first impression.
+
+    Walks VET lines newest-first and takes the last one that does not open by
+    pointing at something already said. Falls back to the final VET line, so a
+    script where every line is dependent still gets the old behaviour rather
+    than an empty caption.
+    """
+    vet = [l["text"].strip() for l in script.get("lines", [])
+           if isinstance(l, dict) and l.get("speaker") == "VET" and l.get("text")]
+    if not vet:
+        return ""
+    for text in reversed(vet):
+        low = text.lower()
+        if not low.startswith(_DEPENDENT_OPENERS) and len(text) > 30:
+            return text
+    return vet[-1]
+
+
 def _dialogue_caption(acc: Account, script: dict) -> str:
     """Instagram caption for a dialogue episode.
 
@@ -588,8 +624,7 @@ def _dialogue_caption(acc: Account, script: dict) -> str:
     are a tip: someone sends one because they feel something, and "you just
     saved money" is that feeling. A generic "support us" has nothing behind it.
     """
-    payoff = next((l["text"] for l in reversed(script["lines"])
-                   if l["speaker"] == "VET"), "")
+    payoff = _standalone_payoff(script)
     gift = ("\n\nIf this saved you money, a ⭐ says thanks louder than a like."
             if _gifts_available(acc) else "")
     # The promo sits AFTER the follow ask and before the hashtags. The ask is
