@@ -389,6 +389,53 @@ _GENRE_SETS = {
 }
 
 
+_SET_SHAPE: dict = {}          # folder -> True when its clips are already vertical
+
+
+def _is_vertical_set(d: Path) -> bool:
+    """True if this folder's clips are already portrait, probed once and cached.
+
+    Cheap ffprobe of a single clip. A folder holds one kind of source, so one
+    sample settles it.
+    """
+    key = str(d.resolve())
+    if key in _SET_SHAPE:
+        return _SET_SHAPE[key]
+    verdict = False
+    try:
+        import subprocess
+        sample = next(iter(sorted(d.glob("*.mp4"))), None)
+        if sample:
+            out = subprocess.run(
+                ["ffprobe", "-v", "error", "-select_streams", "v:0",
+                 "-show_entries", "stream=width,height", "-of", "csv=p=0:s=x",
+                 str(sample)], capture_output=True, text=True, timeout=20).stdout
+            w, h = (int(x) for x in out.strip().split("\n")[0].split("x")[:2])
+            verdict = h > w
+    except Exception:
+        verdict = False
+    _SET_SHAPE[key] = verdict
+    return verdict
+
+
+def _weighted_set_choice(sets: list[Path], rng) -> Path:
+    """Pick a background set, favouring ones that need no cropping.
+
+    Output is 1080x1920. A portrait source maps 1:1. A 16:9 source has to be
+    scaled up ~1.78x and then cropped to the middle ~32% of its width, so it
+    lands visibly softer and loses whatever was at the sides.
+
+    Portrait sets are therefore weighted 2:1. This also keeps hand-captured
+    footage prominent after a large borrowed set is added -- 54 CC clips
+    arriving next to 15 owned ones would otherwise have pushed the owned ones
+    from half the videos down to a third, which is backwards.
+    """
+    if len(sets) < 2:
+        return sets[0]
+    weights = [2 if _is_vertical_set(d) else 1 for d in sets]
+    return rng.choices(sets, weights=weights, k=1)[0]
+
+
 def pick_background_set(acc: Account, genre: str | None = None, rng=None,
                         quiet: bool = False) -> list[Path]:
     """Clips for ONE video: one themed folder, chosen for the story's genre when
@@ -413,7 +460,7 @@ def pick_background_set(acc: Account, genre: str | None = None, rng=None,
             # don't hand a moody-only set to a non-matching genre
             neutral = [d for d in variants
                        if not any(k in d.name.lower() for k in _GENRE_SETS)] or variants
-            chosen = rng.choice(neutral)
+            chosen = _weighted_set_choice(neutral, rng)
         clips = sorted(chosen.glob("*.mp4"))
         if clips:
             if not quiet:
