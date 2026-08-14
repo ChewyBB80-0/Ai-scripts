@@ -323,7 +323,11 @@ def _post_video(path: str | Path, title: str, acc: Account,
     # coverage_check's --fix reported "Fixed 2" for two videos it never touched.
     _did: set[str] = set()
 
-    if "youtube" in platforms:
+    # Dedup, mirroring the Instagram block below. Without it, two runs holding
+    # the same rendered file both upload -- see _yt_posted().
+    if "youtube" in platforms and base in _yt_posted():
+        print(f"Skipping YouTube: {base} is already uploaded.")
+    elif "youtube" in platforms:
         from youtube_upload import upload_video
         try:
             # Metadata comes from the ACCOUNT. It used to be hardcoded to the
@@ -500,6 +504,29 @@ def _video_seconds(path: str | Path) -> float:
         return float(r.stdout.strip())
     except Exception:
         return 0.0
+
+
+def _yt_posted() -> set[str]:
+    """Stems already uploaded to YouTube (dedup).
+
+    The Instagram block has always had this guard; the YouTube block had none,
+    so two overlapping runs of the same render uploaded it twice. That happened
+    on 2026-08-14: car_brake_squeal_diagnosis went up as oZKDEIWNkv8 at 01:05
+    and again as Jw2VXueR-vQ at 01:08, while the Instagram half of the second
+    run correctly skipped. Two public duplicates on the channel, and nothing in
+    the pipeline noticed.
+
+    Scheduled counts: the upload exists and will auto-release, so re-uploading
+    would double-post exactly as a live one would.
+    """
+    t = set()
+    if not POST_LOG.exists():
+        return t
+    with open(POST_LOG) as f:
+        for row in csv.reader(f):
+            if len(row) >= 4 and row[3] in YT_UPLOAD_STATUSES:
+                t.add(row[1])
+    return t
 
 
 def _ig_posted() -> set[str]:
