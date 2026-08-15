@@ -182,6 +182,18 @@ def daily_report() -> str:
     except Exception:
         pass
 
+    # Issues whose blocking condition has just cleared. Only the ones that are
+    # actionable NOW -- a daily list of things still waiting is noise, and noise
+    # is how a report stops being read.
+    try:
+        from issue_watch import summary as _issues
+        block = _issues(ready_only=True)
+        if block:
+            lines.append("")
+            lines.append(block)
+    except Exception:
+        pass
+
     return "\n".join(lines)
 
 
