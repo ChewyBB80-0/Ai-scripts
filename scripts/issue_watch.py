@@ -55,11 +55,22 @@ def _posted_rows(acc) -> list:
 
 # --------------------------------------------------------------------------
 def check_tiktok() -> Result:
-    """#4 -- approval is TikTok's to give; the observable proxy is a token."""
+    """#4 -- there is NO API for app-review status, so this cannot be automated.
+
+    The first version of this check used "tiktok_token.json exists" as a proxy
+    for approval and reported READY on day one. The token is dated 2026-08-10,
+    three days BEFORE the resubmission it was supposedly signalling: it records
+    that an OAuth flow was completed once, which says nothing about whether the
+    current submission was approved. A check that answers a different question
+    than the one asked is worse than no check, because it gets believed.
+    """
     tok = ROOT / "tiktok_token.json"
+    age = ""
     if tok.exists():
-        return True, "tiktok_token.json exists — auth completed, check the app status"
-    return False, "still in review (no tiktok_token.json yet)"
+        age = (f"; a token exists from "
+               f"{datetime.fromtimestamp(tok.stat().st_mtime):%Y-%m-%d} "
+               "(proves auth once, NOT approval)")
+    return None, f"no API for review status — check developers.tiktok.com{age}"
 
 
 def check_feedback_layer() -> Result:
@@ -85,7 +96,12 @@ def check_window_data() -> Result:
             continue
         for r in _posted_rows(acc):
             try:
-                if datetime.fromisoformat(r[0]) >= since:
+                when = datetime.fromisoformat(r[0])
+                # Early rows were logged without an offset; treat those as
+                # local so they compare against an aware cutoff.
+                if when.tzinfo is None:
+                    when = when.astimezone()
+                if when >= since:
                     n += 1
             except ValueError:
                 pass
