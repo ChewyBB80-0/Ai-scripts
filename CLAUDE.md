@@ -3,6 +3,18 @@
 This project generates and posts short-form vertical videos to YouTube,
 Instagram, and eventually TikTok.
 
+## Multi-Agent Cowork
+
+This project is worked on by **both Claude Code and Antigravity (Gemini)**.
+
+**Always read `COWORK.md` at session start.** It is the shared task board:
+- Check "In Progress" before editing any file to avoid conflicts with the other agent.
+- Pick up tasks from "To Do" tagged `[Claude]` or `[Either]`.
+- When done, move the task to "Done" with a date and summary.
+- Use the "Handoff Queue" to pass context to Antigravity.
+- Antigravity's instructions are in `GEMINI.md` — don't modify that file.
+
+
 It runs **two channels**, and they make different things:
 
 | account | makes | pipeline |

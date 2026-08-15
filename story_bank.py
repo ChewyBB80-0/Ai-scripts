@@ -486,14 +486,26 @@ Respond ONLY with JSON in this exact format, no other text:
 {{"title": "short_snake_case_title", "display_title": "the scroll-stopping title", "share_line": "the send-this-to line", "beats": ["beat 1", "beat 2", ...]}}
 """
 
-    resp = client.messages.create(
-        model="claude-sonnet-5",
-        max_tokens=1500,
-        thinking={"type": "disabled"},  # simple JSON task; keeps content[0] as text
-        messages=[{"role": "user", "content": prompt}],
-    )
-    # Pull the text block explicitly (robust even if block order changes).
-    text = next(b.text for b in resp.content if b.type == "text").strip()
+    try:
+        resp = client.messages.create(
+            model="claude-sonnet-5",
+            max_tokens=1500,
+            thinking={"type": "disabled"},  # simple JSON task; keeps content[0] as text
+            messages=[{"role": "user", "content": prompt}],
+        )
+        # Pull the text block explicitly (robust even if block order changes).
+        text = next(b.text for b in resp.content if b.type == "text").strip()
+    except anthropic.RateLimitError:
+        print("Anthropic rate limit reached. Falling back to next best AI (OpenAI)...")
+        import openai
+        openai_client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+        resp = openai_client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=1500,
+        )
+        text = resp.choices[0].message.content.strip()
+
     text = text.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
     story = json.loads(text)
     story["genre"] = genre_key  # carries to captions/hashtags (propagates to parts)
@@ -526,12 +538,24 @@ Rules (the craft that makes these go viral):
 Respond ONLY with JSON, no other text:
 {{"title": "short_snake_case_title", "display_title": "the scroll-stopping title", "share_line": "the send-this-to line", "beats": ["beat 1", "beat 2", ...]}}
 """
-    resp = client.messages.create(
-        model="claude-sonnet-5", max_tokens=1500,
-        thinking={"type": "disabled"},
-        messages=[{"role": "user", "content": prompt}],
-    )
-    text = next(b.text for b in resp.content if b.type == "text").strip()
+    try:
+        resp = client.messages.create(
+            model="claude-sonnet-5", max_tokens=1500,
+            thinking={"type": "disabled"},
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = next(b.text for b in resp.content if b.type == "text").strip()
+    except anthropic.RateLimitError:
+        print("Anthropic rate limit reached. Falling back to next best AI (OpenAI)...")
+        import openai
+        openai_client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+        resp = openai_client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=1500,
+        )
+        text = resp.choices[0].message.content.strip()
+
     text = text.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
     story = json.loads(text)
     story["genre"] = post.get("genre")
