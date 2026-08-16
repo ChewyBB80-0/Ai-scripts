@@ -201,11 +201,18 @@ def _deleted_stems() -> set[str]:
               "review the list before uploading.")
         return set()
 
-    stem2id = {}
+    # ALL of a stem's uploads, not just the last one. This was
+    # `stem2id[stem] = vid`, so a stem uploaded twice kept only the later id --
+    # and deleting EITHER copy then condemned the episode. That is exactly what
+    # happened to car_brake_squeal_diagnosis: it went up twice (oZKDEIWNkv8 and
+    # Jw2VXueR-vQ), the duplicate was deleted, and the still-public original was
+    # judged deleted with it, quietly barring a good episode from every future
+    # compilation. A stem is gone only when nothing it produced survives.
+    stem2ids: dict[str, set] = {}
     for r in csv.reader(open(POST_LOG, encoding="utf-8")):
         if len(r) >= 4 and r[2] and r[3] in ("posted", "posted_manual", "scheduled"):
-            stem2id[r[1].replace(".mp4", "")] = r[2]
-    ids = list(stem2id.values())
+            stem2ids.setdefault(r[1].replace(".mp4", ""), set()).add(r[2])
+    ids = sorted({v for s in stem2ids.values() for v in s})
     alive = set()
     try:
         for i in range(0, len(ids), 50):
@@ -214,7 +221,8 @@ def _deleted_stems() -> set[str]:
     except Exception as e:
         print(f"WARNING: YouTube check failed ({e}) -- review before uploading.")
         return set()
-    return {s for s, v in stem2id.items() if v not in alive}
+    # Deleted only if NONE of its uploads survive.
+    return {s for s, vids in stem2ids.items() if not (vids & alive)}
 
 
 def rank_stories(include_used: bool = False) -> list[dict]:
