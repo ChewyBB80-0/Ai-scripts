@@ -354,18 +354,52 @@ def _space_topics(groups: list) -> list:
     """Reorder so near-duplicate subjects never sit adjacent.
 
     Ranking is purely by views, which happily lands two check-engine-light
-    episodes back to back -- and in a 12-minute video that reads as repetition
-    exactly where a viewer decides whether to stay. This keeps rank order
-    wherever it can and only reaches further down the list when the next
-    episode would repeat the previous one's subject. If everything remaining is
-    similar it takes the best rather than refusing to place anything.
+    episodes back to back -- and in a twelve-minute video that reads as
+    repetition exactly where a viewer decides whether to stay.
+
+    Interleaved, not greedy. A greedy scan from the front fixes clashes near
+    the top and then strands the rest: two dealership-finance episodes ranked
+    last stayed adjacent because by the time the scan reached them nothing else
+    remained to separate them. Similar items sinking to the tail always collide
+    that way.
+
+    So: bucket by subject, then repeatedly take from whichever subject has the
+    MOST left, never the one just used. Emptying the crowded subjects first is
+    what guarantees they can be separated -- the same argument as rearranging a
+    string so no two equal characters touch. Rank order is preserved inside
+    each subject, so the best episode of a subject still comes first.
     """
-    remaining, out = list(groups), []
-    while remaining:
-        prev = out[-1] if out else None
-        idx = next((i for i, g in enumerate(remaining)
-                    if prev is None or not _similar(prev, g)), 0)
-        out.append(remaining.pop(idx))
+    from collections import defaultdict
+    buckets, order = defaultdict(list), []
+    for i, g in enumerate(groups):
+        # Unclustered episodes each get their own bucket: nothing is "similar"
+        # to them by cluster, so they are free separators.
+        key = _topic_cluster(g.get("title")) or f"__solo_{i}"
+        if key not in buckets:
+            order.append(key)
+        buckets[key].append(g)
+
+    out, prev = [], None
+    while any(buckets.values()):
+        live = [k for k in order if buckets[k]]
+        cands = [k for k in live if k != prev] or live
+        # Most-remaining first; ties broken by original rank so the higher-viewed
+        # subject leads.
+        key = max(cands, key=lambda k: (len(buckets[k]), -order.index(k)))
+        out.append(buckets[key].pop(0))
+        prev = key
+
+    # Content-word overlap can still pair two episodes the cluster map does not
+    # know about. One cheap pass swaps such a neighbour forward if anywhere
+    # later in the list is safe.
+    for i in range(len(out) - 1):
+        if not _similar(out[i], out[i + 1]):
+            continue
+        for j in range(i + 2, len(out)):
+            if (not _similar(out[i], out[j])
+                    and (i + 2 >= len(out) or not _similar(out[j], out[i + 2]))):
+                out[i + 1], out[j] = out[j], out[i + 1]
+                break
     return out
 
 
