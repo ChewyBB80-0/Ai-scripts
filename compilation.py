@@ -306,6 +306,69 @@ def _make_card(text: str, index: int, path: Path):
     img.save(path)
 
 
+# Domain groupings. Purely lexical overlap catches "check engine light" twice
+# but NOT a dealership-loan episode sitting next to an extended-warranty one --
+# same pitch to a viewer, no words in common. These are deliberately coarse and
+# best-effort; an episode matching nothing is simply never called similar.
+_TOPIC_CLUSTERS = {
+    "engine_light": ("check engine", "engine light", "obd", "code read", "diagnostic"),
+    "finance":      ("dealership", "loan", "warranty", "finance", "upsell",
+                     "add-on", "add on", "f&i"),
+    "tires":        ("tire", "psi", "pressure", "wheel", "nitrogen", "alignment",
+                     "lug", "rotate"),
+    "brakes":       ("brake", "rotor", "pad", "squeal"),
+    "fluids":       ("oil change", "coolant", "washer fluid", "transmission",
+                     "gas tank", "fuel", "gas station", "octane", "premium gas"),
+    "battery":      ("battery", "terminal", "alternator", "jump start"),
+    "filters":      ("air filter", "cabin filter", "engine filter"),
+    "cosmetic":     ("wash", "wax", "paint", "headlight", "detail", "ceramic"),
+}
+_STOP = {"the", "a", "an", "your", "you", "youre", "is", "are", "to", "for",
+         "of", "and", "at", "in", "on", "it", "its", "that", "this", "my",
+         "why", "what", "how", "not", "be", "was", "with", "from", "quietly",
+         "might", "mean", "costs", "cost", "free", "every", "just"}
+
+
+def _content_words(title: str) -> set:
+    return {w for w in re.findall(r"[a-z]+", (title or "").lower())
+            if len(w) > 2 and w not in _STOP}
+
+
+def _topic_cluster(title: str):
+    low = (title or "").lower()
+    for name, keys in _TOPIC_CLUSTERS.items():
+        if any(k in low for k in keys):
+            return name
+    return None
+
+
+def _similar(a: dict, b: dict) -> bool:
+    """Two episodes a viewer would experience as the same subject."""
+    ca, cb = _topic_cluster(a.get("title")), _topic_cluster(b.get("title"))
+    if ca and ca == cb:
+        return True
+    return len(_content_words(a.get("title")) & _content_words(b.get("title"))) >= 2
+
+
+def _space_topics(groups: list) -> list:
+    """Reorder so near-duplicate subjects never sit adjacent.
+
+    Ranking is purely by views, which happily lands two check-engine-light
+    episodes back to back -- and in a 12-minute video that reads as repetition
+    exactly where a viewer decides whether to stay. This keeps rank order
+    wherever it can and only reaches further down the list when the next
+    episode would repeat the previous one's subject. If everything remaining is
+    similar it takes the best rather than refusing to place anything.
+    """
+    remaining, out = list(groups), []
+    while remaining:
+        prev = out[-1] if out else None
+        idx = next((i for i, g in enumerate(remaining)
+                    if prev is None or not _similar(prev, g)), 0)
+        out.append(remaining.pop(idx))
+    return out
+
+
 def build(minutes: int = 12, dry_run: bool = False,
           theme: str | None = None) -> Path | None:
     ensure_ffmpeg()
@@ -346,6 +409,10 @@ def build(minutes: int = 12, dry_run: bool = False,
             break
         picked.append(g)
         total += g["seconds"] + CARD_SECONDS
+
+    # Selection is by views; ORDER is by variety. Done after picking so the
+    # spacing never changes which episodes make the cut, only where they sit.
+    picked = _space_topics(picked)
 
     if total < 240:
         print(f"Only {total/60:.1f} min available -- too short to clear the "
