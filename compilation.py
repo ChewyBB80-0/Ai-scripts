@@ -462,6 +462,7 @@ def build(minutes: int = 12, dry_run: bool = False,
     tmp = OUT_DIR / "_tmp"
     tmp.mkdir(exist_ok=True)
     segments: list[Path] = []
+    dropped: list[tuple] = []
     # Vertical source over a blurred, zoomed copy of itself -> fills 16:9
     # without the black pillarbox that makes desktop playback look broken.
     vf = (f"split[bg][fg];"
@@ -485,23 +486,37 @@ def build(minutes: int = 12, dry_run: bool = False,
 
         for f in g["files"]:
             seg = tmp / f"seg_{i:02d}_{f.stem[:20]}.mp4"
-            subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(f),
+            r = subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(f),
                             "-filter_complex", vf, "-c:v", "libx264",
                             "-preset", config.FFMPEG_PRESET, "-crf", config.FFMPEG_CRF,
                             "-pix_fmt", "yuv420p", "-r", "30",
                             "-c:a", "aac", "-ar", "44100", "-ac", "2",
-                            str(seg)], capture_output=True, timeout=900)
-            if seg.exists():
+                            str(seg)], capture_output=True, text=True, timeout=900)
+            if seg.exists() and r.returncode == 0:
                 segments.append(seg)
+            else:
+                # Was `if seg.exists()` with the result discarded, so a failed
+                # encode dropped the story and the build still reported success.
+                dropped.append((f.name, (r.stderr or "").strip()[-160:]))
 
     lst = tmp / "concat.txt"
     lst.write_text("".join(f"file '{s.as_posix()}'\n" for s in segments),
                    encoding="utf-8")
     from datetime import date
     out = OUT_DIR / f"compilation_{date.today():%Y%m%d}.mp4"
-    subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0",
-                    "-i", str(lst), "-c", "copy", str(out)],
-                   capture_output=True, timeout=900)
+    if dropped:
+        print(f"WARNING: {len(dropped)} story segment(s) failed to encode and "
+              "were left out:")
+        for name, err in dropped:
+            print(f"   {name}: {err or '(no stderr)'}")
+
+    expected = sum(_duration(s) for s in segments)
+    cj = subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0",
+                         "-i", str(lst), "-c", "copy", str(out)],
+                        capture_output=True, text=True, timeout=900)
+    if cj.returncode != 0 or (cj.stderr or "").strip():
+        print(f"concat reported: {(cj.stderr or '').strip()[:300]}")
+    got = _duration(out) if out.exists() else 0.0
     for f in tmp.iterdir():
         f.unlink(missing_ok=True)
     tmp.rmdir()
@@ -509,7 +524,18 @@ def build(minutes: int = 12, dry_run: bool = False,
     if not out.exists():
         print("ffmpeg failed to produce the compilation.")
         return None
-    dur = _duration(out)
+
+    # A build that quietly loses most of its runtime is the failure that
+    # actually happened: 14 stories were selected, the log said "Built ...",
+    # and the file was 4.4 minutes of an intended 12.1. Never hand back a
+    # truncated compilation as if it succeeded.
+    if expected and got < expected * 0.95:
+        print(f"ABORTING: the joined file is {got/60:.1f} min but its parts "
+              f"total {expected/60:.1f} min — {expected - got:.0f}s went missing "
+              "in the concat. Not returning a truncated compilation.")
+        out.unlink(missing_ok=True)
+        return None
+    dur = got
     print(f"\nBuilt {out.name} — {dur/60:.1f} min, "
           f"{out.stat().st_size/1e6:.0f} MB, {W}x{H}")
     if dur < 185:
