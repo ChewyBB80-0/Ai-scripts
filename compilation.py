@@ -31,6 +31,7 @@ Design notes:
 import argparse
 import csv
 import json
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -403,10 +404,42 @@ def _space_topics(groups: list) -> list:
     return out
 
 
+def _build_lock():
+    """Refuse to start a second build for this account.
+
+    PID-scoped temp dirs stop concurrent builds destroying each other, but two
+    builds still race for the same compilation_YYYYMMDD.mp4 and burn twenty
+    minutes of CPU rendering the same video twice. The hourly --weekly job and
+    a manual run are the pair that actually collided.
+    """
+    lock = OUT_DIR / ".build.lock"
+    if lock.exists():
+        import time
+        age = time.time() - lock.stat().st_mtime
+        if age < 3600:
+            print(f"another build is running (lock {age/60:.0f} min old) — "
+                  "skipping. Delete .build.lock if that is stale.")
+            return None
+        lock.unlink(missing_ok=True)
+    lock.write_text(str(os.getpid()))
+    return lock
+
+
 def build(minutes: int = 12, dry_run: bool = False,
           theme: str | None = None) -> Path | None:
     ensure_ffmpeg()
     OUT_DIR.mkdir(parents=True, exist_ok=True)
+    lock = _build_lock()
+    if lock is None:
+        return None
+    try:
+        return _build_inner(minutes, dry_run, theme)
+    finally:
+        lock.unlink(missing_ok=True)
+
+
+def _build_inner(minutes: int = 12, dry_run: bool = False,
+                 theme: str | None = None) -> Path | None:
     target = minutes * 60
 
     if theme == "auto":
@@ -459,7 +492,14 @@ def build(minutes: int = 12, dry_run: bool = False,
     if dry_run:
         return None
 
-    tmp = OUT_DIR / "_tmp"
+    # PID-scoped, because this directory is WIPED at the end of a build. It was
+    # a fixed "_tmp", so two builds running at once deleted each other's
+    # in-flight segments: on 2026-08-16 a manual build and the hourly --weekly
+    # job overlapped, one crashed on a card PNG the other had just removed, and
+    # the survivor produced 4.4 minutes of an intended 12.1 while reporting
+    # success. assemble.py already scopes its temp dir by PID for exactly this
+    # reason; this module never got the same treatment.
+    tmp = OUT_DIR / f"_tmp_{os.getpid()}"
     tmp.mkdir(exist_ok=True)
     segments: list[Path] = []
     dropped: list[tuple] = []
