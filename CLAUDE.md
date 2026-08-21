@@ -3,16 +3,30 @@
 This project generates and posts short-form vertical videos to YouTube,
 Instagram, and eventually TikTok.
 
-## Multi-Agent Cowork
+## Session hand-off
 
-This project is worked on by **both Claude Code and Antigravity (Gemini)**.
+Antigravity (Gemini) was dropped from the workflow on **2026-08-16**. There is no
+second agent. `COWORK.md` and `GEMINI.md` are **retired** — both stopped being
+updated on 2026-08-15 and are kept only as a record. Do not read `COWORK.md` for
+your task list, do not write to its Handoff Queue, and do not wait on anything
+tagged `[AGY]`.
 
-**Always read `COWORK.md` at session start.** It is the shared task board:
-- Check "In Progress" before editing any file to avoid conflicts with the other agent.
-- Pick up tasks from "To Do" tagged `[Claude]` or `[Either]`.
-- When done, move the task to "Done" with a date and summary.
-- Use the "Handoff Queue" to pass context to Antigravity.
-- Antigravity's instructions are in `GEMINI.md` — don't modify that file.
+What replaced it is the workspace vault. It is on a different drive, so these are
+absolute paths, not relative ones:
+
+- **Read** `C:\Users\Krish\claud ai stuff\Claude-obsidian-\wiki\hot.md` at session
+  start — it is the previous *session's* hand-off, not another agent's.
+- **Write** back with `powershell -File bridge.ps1 handoff`, run from
+  `C:\Users\Krish\claud ai stuff`, when a session changes the state of the world.
+
+See that directory's `CLAUDE.md` for the full protocol. The reason it still matters
+with one agent is unchanged: separate Claude Code sessions cannot see each other
+either.
+
+Three real work items were stranded in `COWORK.md`'s To Do assigned to Antigravity.
+They are not done and nobody is coming for them:
+`social_caption.py`'s hashtag strategy (3–5 tags, per `CAPTION_RESEARCH.md`), the
+Windows scheduled-task interval, and an agent-to-agent MCP bridge that is now moot.
 
 
 It runs **two channels**, and they make different things:
@@ -21,6 +35,13 @@ It runs **two channels**, and they make different things:
 |---|---|---|
 | `parkourflux` | narrated AI story over Minecraft parkour footage | `bot.py` story path |
 | `carveteran` | two-voice car-tips dialogue over driving footage | `dialogue_video.py` |
+
+**`carveteran` is the lead channel** as of 2026-08-19. It is the one gaining
+subscribers, so it gets the attention and it owns the TikTok developer app —
+app name, website (`thecarveteran.pages.dev`, built from `site_carveteran/`),
+icon and redirect URI all belong to it. `parkourflux` keeps its own site at
+`parkourflux.pages.dev` (`site/`). Which channel owns TikTok is config, not a
+hardcoded id: `acc.tiktok` in `accounts.json`, exactly one account true.
 
 `bot.run_once()` dispatches on the account's `content_type`, so one command
 serves both and every per-account setting (footage tree, daily target, platform

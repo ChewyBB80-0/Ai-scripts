@@ -139,7 +139,7 @@ def _display_hook(hook: str) -> str:
     return hook.replace("AITAH", "r/AITAH", 1)
 
 
-def build_caption(hook: str, handle: str = "@ParkourFlux", part: int | None = None,
+def build_caption(hook: str, handle: str, part: int | None = None,
                   total_parts: int = 1, genre: str | None = None,
                   subreddit: str | None = None) -> str:
     # Prefer the story's tagged genre (reliable); fall back to sniffing the hook.
@@ -186,7 +186,7 @@ def build_caption(hook: str, handle: str = "@ParkourFlux", part: int | None = No
     return "\n".join(lines)
 
 
-def ai_caption(hook: str, handle: str = "@ParkourFlux", part: int | None = None,
+def ai_caption(hook: str, handle: str, part: int | None = None,
                total_parts: int = 1, genre: str | None = None,
                subreddit: str | None = None) -> str:
     """
@@ -268,4 +268,7 @@ if __name__ == "__main__":
     import sys, json
     from pathlib import Path
     story = json.loads(Path(sys.argv[1]).read_text())
-    print(build_caption(story.get("hook") or story["beats"][0]))
+    from accounts import get_account
+    acc_id = sys.argv[2] if len(sys.argv) > 2 else "parkourflux"
+    print(build_caption(story.get("hook") or story["beats"][0],
+                        handle=get_account(acc_id).handle))

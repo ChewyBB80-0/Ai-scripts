@@ -105,7 +105,7 @@ GENRE_SUBREDDIT = {"aitah": "r/AITAH", "revenge": "r/pettyrevenge",
 
 
 def build_hook_card(hook_text: str, out_path: str | Path,
-                    handle: str = "@ParkourFlux",
+                    handle: str,
                     avatar_path: str | Path | None = None,
                     part_label: str | None = None,
                     subreddit: str | None = None) -> Path:
@@ -242,15 +242,23 @@ def build_hook_card(hook_text: str, out_path: str | Path,
 
 
 if __name__ == "__main__":
+    # handle is required now, so the smoke test has to name a channel too --
+    # which is the point: a card without a handle is a card for nobody.
+    #   python hook_card.py [account_id]
+    import sys
+    from accounts import get_account
+    _acc = get_account(sys.argv[1] if len(sys.argv) > 1 else "parkourflux")
     p = build_hook_card(
         "Which officer's incompetence did your NCO corps quietly fix for months?",
         "output/_card_test.png",
+        handle=_acc.handle,
+        avatar_path=_acc.logo,
     )
-    print(f"Card rendered -> {p}")
+    print(f"Card rendered -> {p}  ({_acc.handle})")
 
 
 def build_end_card(out_path: str | Path,
-                   handle: str = "@ParkourFlux",
+                   handle: str,
                    avatar_path: str | Path | None = None,
                    line: str = "Follow for a new Reddit story every day",
                    sub_line: str = "New stories daily") -> Path:

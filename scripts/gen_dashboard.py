@@ -137,7 +137,9 @@ def build():
         # its videos already have views.
         yt_views = sum(v["views"] for v in vids)
         fetched = max(fetched, s.get("fetchedAt", "") or "")
-        is_main = acc.id == "parkourflux"
+        # Not "is this the main channel" -- it is "does this channel own the
+        # TikTok app". Those were the same account until 2026-08-19.
+        has_tiktok = acc.tiktok
         # Stamp the channel onto every row. Once several channels are merged into
         # one table, a row without its channel is unreadable -- and the merge
         # happens client-side, where the account is no longer in scope.
@@ -163,9 +165,9 @@ def build():
             "igPro": ig.get("accountType", "") in ("MEDIA_CREATOR", "BUSINESS",
                                                    "CREATOR"),
             "posts": _load_posts(out_dir / "post_log.csv"),
-            "ttDrafts": tt_drafts if is_main else 0,
-            "ttQueue": tt_queue if is_main else [],
-            "ttConnected": is_main,
+            "ttDrafts": tt_drafts if has_tiktok else 0,
+            "ttQueue": tt_queue if has_tiktok else [],
+            "ttConnected": has_tiktok,
         })
         per_acc[acc.id] = {"yt": yt_views, "ig": ig.get("totalViews", 0),
                            "subs": s.get("subscribers", 0)}
@@ -189,7 +191,7 @@ def build():
 
 _TEMPLATE = r"""<!doctype html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ParkourFlux — Ops</title>
+<title>Media Maker — Ops</title>
 <style>
 :root{--bg:#0D1017;--surface:#161B26;--alt:#1E2432;--border:#2A3142;--text:#E9EAEE;--muted:#8890A3;--mint:#5EE6B9;--violet:#7C8CFF;--amber:#F0B429;--red:#F0553D;--pink:#E85D9B;--bgGrad:linear-gradient(150deg,#241C52 0%,#0F1119 46%,#0C1C38 100%)}
 @media(prefers-color-scheme:light){:root{--bg:#F2F3F7;--surface:#fff;--alt:#E9EBF2;--border:#D4D8E3;--text:#1A1E2A;--muted:#6A7186;--violet:#5163E0;--mint:#0FA97C;--bgGrad:linear-gradient(150deg,#ECE7FB 0%,#F2F3F7 52%,#E4EDFB 100%)}}

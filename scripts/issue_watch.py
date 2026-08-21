@@ -70,7 +70,9 @@ def check_tiktok() -> Result:
         age = (f"; a token exists from "
                f"{datetime.fromtimestamp(tok.stat().st_mtime):%Y-%m-%d} "
                "(proves auth once, NOT approval)")
-    return None, f"no API for review status — check developers.tiktok.com{age}"
+    return None, ("rejected 4th time 2026-08-19 — icon/favicon FIXED and deployed; "
+                  "the blocker is now a sandbox demo recording only Krish can make, "
+                  f"see TIKTOK_DEMO_VIDEO.md{age}")
 
 
 def check_feedback_layer() -> Result:

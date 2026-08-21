@@ -5,25 +5,34 @@
 # Git-connected project deploys every push on its own and this script becomes
 # dead weight -- prefer that, and delete this, if the connection ever works.
 #
-# The project name is deliberately hardcoded. parkourflux.pages.dev is
-# registered as the OAuth redirect URI in the TikTok developer portal and is
-# hardcoded at tiktok_upload.py:23, so deploying under a different name would
-# silently break authorisation rather than the site.
-#
-# Renamed from parkourflux-policy on 2026-08-13: TikTok requires the domain to
-# match the app name exactly, and renaming a Pages project does NOT change its
-# hostname, so a new project had to be created.
+# Takes a channel: parkourflux (default) or carveteran. Each channel gets its
+# OWN Pages project, because the project name IS the hostname and TikTok wants
+# the domain to match the app name -- and renaming a Pages project does NOT
+# change its hostname (Cloudflare's own rename dialog says so), so a second
+# channel means a second project, never a rename. The chosen hostname is also
+# registered as the OAuth redirect URI in the TikTok developer portal and must
+# agree with REDIRECT_URI in tiktok_upload.py, or authorisation breaks rather
+# than the site.
 #
 #   CLOUDFLARE_API_TOKEN   scoped to Account -> Cloudflare Pages -> Edit
 #   CLOUDFLARE_ACCOUNT_ID  from the Workers & Pages overview page
 #
 # Both are read from ~/media_maker/.env. The token is never printed.
 #
-#   bash scripts/deploy_site.sh
+#   bash scripts/deploy_site.sh              (parkourflux)
+#   bash scripts/deploy_site.sh carveteran
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-PROJECT="parkourflux"
+
+CHANNEL="${1:-parkourflux}"
+case "$CHANNEL" in
+    parkourflux) PROJECT="parkourflux";   SRC="site" ;;
+    carveteran)  PROJECT="thecarveteran"; SRC="site_carveteran" ;;
+    *) echo "unknown channel '$CHANNEL' -- use parkourflux or carveteran" >&2
+       exit 1 ;;
+esac
+[ -d "$SRC" ] || { echo "$SRC/ does not exist" >&2; exit 1; }
 
 if [ -f .env ]; then
     set -a
@@ -58,17 +67,25 @@ fi
 missing=0
 for f in index.html how-it-works.html tiktok.html privacy.html terms.html \
          callback.html style.css; do
-    [ -f "site/$f" ] || { echo "site/$f is missing" >&2; missing=1; }
+    [ -f "$SRC/$f" ] || { echo "$SRC/$f is missing" >&2; missing=1; }
 done
 [ "$missing" -eq 0 ] || exit 1
 
-if grep -rq "REPLACE-WITH" site/*.html; then
-    echo "site/ still contains REPLACE-WITH placeholders -- fix before deploying." >&2
+if grep -rq "REPLACE-WITH" "$SRC"/*.html; then
+    echo "$SRC/ still contains REPLACE-WITH placeholders -- fix before deploying." >&2
     exit 1
 fi
 
-echo "Deploying site/ to ${PROJECT}.pages.dev ..."
-npx --yes wrangler@latest pages deploy site \
+for f in favicon.ico icon-32.png apple-touch-icon.png; do
+    [ -f "$SRC/$f" ] || {
+        echo "$SRC/$f is missing -- the browser tab would fall back" >&2
+        echo "to no icon, which is what TikTok rejected the app for" >&2
+        echo "on 2026-08-19. Regenerate the icon set first." >&2
+        exit 1; }
+done
+
+echo "Deploying $SRC/ to ${PROJECT}.pages.dev ..."
+npx --yes wrangler@latest pages deploy "$SRC" \
     --project-name="$PROJECT" \
     --branch=main \
     --commit-dirty=true
@@ -87,6 +104,17 @@ for p in / /how-it-works /tiktok /privacy /terms /callback /style.css; do
     printf '  %-14s %s\n' "$p" "$code"
     [ "$code" = "200" ] || fail=1
 done
+
+# A favicon that 200s is not proof of anything: Pages answers a missing
+# /favicon.ico with index.html, status 200, content-type text/html. Judge
+# the content-type, which is the thing that was actually wrong.
+ctype=$(curl -sLI --max-time 20 "https://${PROJECT}.pages.dev/favicon.ico" 2>/dev/null | tr -d '\r' | awk -F': ' 'tolower($1)=="content-type"{print $2}' | tail -1)
+case "$ctype" in
+    image/*) printf '  %-14s %s\n' "/favicon.ico" "OK ($ctype)" ;;
+    *) echo "  /favicon.ico serves '$ctype', not an image -- the browser tab" >&2
+       echo "  will show no icon. This is the 2026-08-19 rejection." >&2
+       fail=1 ;;
+esac
 
 # /callback is the one that breaks TikTok auth rather than just looking wrong.
 #

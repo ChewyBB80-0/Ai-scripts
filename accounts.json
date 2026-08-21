@@ -16,7 +16,8 @@
     "daily_target": 1,
     "ig_enabled": true,
     "post_after_hour": 15,
-    "post_before_hour": 21
+    "post_before_hour": 21,
+    "tiktok": false
   },
   {
     "id": "carveteran",
@@ -49,6 +50,7 @@
     "post_after_hour": 12,
     "post_before_hour": 21,
     "promo_ig": "Stickers of these two \u2014 link in bio. Code RUSTY-IG for 10% off.",
-    "promo_yt": "Rusty & Sparky stickers: https://idlehoursco.com/collections/rusty-and-sparky\nCode RUSTY-YT for 10% off."
+    "promo_yt": "Rusty & Sparky stickers: https://idlehoursco.com/collections/rusty-and-sparky\nCode RUSTY-YT for 10% off.",
+    "tiktok": true
   }
 ]

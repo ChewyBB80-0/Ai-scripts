@@ -43,6 +43,13 @@ class Account:
     # compete with each other for the same audience and waste the second slot.
     min_gap_hours: float = 0
     ig_enabled: bool = True
+    # Which channel the TikTok developer app belongs to. Exactly one
+    # account should have this: the app's name, website, icon and redirect
+    # URI are all tied to a single channel, so "connected to TikTok" is a
+    # property of that channel, not of the installation. Repointed from
+    # parkourflux to carveteran on 2026-08-19; approval is still pending,
+    # so this says which channel OWNS the integration, not that it works.
+    tiktok: bool = False
     # What this channel makes. bot.py's whole pipeline is Reddit-style narrated
     # STORIES; the car channel is two-voice dialogue from dialogue_video.py and
     # shares nothing but the assembler. Running the story path against it once

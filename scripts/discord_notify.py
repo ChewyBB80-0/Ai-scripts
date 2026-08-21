@@ -200,7 +200,7 @@ def daily_report() -> str:
 if __name__ == "__main__":
     mode = sys.argv[1] if len(sys.argv) > 1 else "report"
     if mode == "test":
-        ok = send_dm("👋 ParkourFlux bot connected — you'll get daily reports and alerts here.")
+        ok = send_dm("👋 Media Maker bot connected — you'll get daily reports and alerts here.")
         print("sent" if ok else "failed")
     else:
         # The hourly task calls this every run. Send ONE report per calendar

@@ -20,21 +20,50 @@ from pathlib import Path
 
 import requests
 
-REDIRECT_URI = "https://parkourflux.pages.dev/callback"
-SCOPES = "user.info.basic,video.upload"
-TOKEN_FILE = Path(__file__).parent / "tiktok_token.json"
+# The channel this app belongs to. Switched from ParkourFlux to The Car
+# Veteran on 2026-08-19: the car channel is the one that is actually growing,
+# so it is the one worth spending a TikTok approval on.
+#
+# This value must match the redirect URI registered in the developer portal
+# EXACTLY, or authorisation fails with redirect_uri mismatch. It is also the
+# domain TikTok checks the app name and icon against, so it moves as one
+# change with the portal's app name, website URL, icon and domain
+# verification -- never on its own. TIKTOK_REDIRECT_URI overrides it, which
+# is the fast way back if the portal edit has to be rolled back.
+SITE_HOST = os.environ.get("TIKTOK_SITE_HOST", "thecarveteran.pages.dev")
+REDIRECT_URI = os.environ.get("TIKTOK_REDIRECT_URI",
+                              f"https://{SITE_HOST}/callback")
+# video.upload ONLY. user.info.basic was dropped 2026-08-19 after the 4th app
+# rejection, which said "if you don't need certain products or scopes, make sure
+# to remove them before review". It bought exactly one thing: a display-name
+# print before an upload. That is not worth a scope the reviewer has to be
+# convinced of, and every extra scope is another thing the demo must prove.
+# Dropping it here is only half the change -- it must also be removed from the
+# requested scopes in the developer portal, or auth breaks.
+SCOPES = "video.upload"
+# Sandbox mode. App review REQUIRES the demo recording to be made against a
+# sandbox ("You are required to use sandbox to demonstrate the integration"),
+# and a TikTok sandbox is a SEPARATE client key/secret with its own token. So
+# recording the demo must not clobber the live token -- hence a separate file
+# and separate env vars. Set TIKTOK_SANDBOX=1, or pass --sandbox.
+_SANDBOX = os.environ.get("TIKTOK_SANDBOX", "").lower() not in ("", "0", "false", "no")
+
+
+def _token_file() -> Path:
+    return Path(__file__).parent / (
+        "tiktok_token_sandbox.json" if _SANDBOX else "tiktok_token.json")
 
 AUTH_URL = "https://www.tiktok.com/v2/auth/authorize/"
 TOKEN_URL = "https://open.tiktokapis.com/v2/oauth/token/"
 INBOX_INIT = "https://open.tiktokapis.com/v2/post/publish/inbox/video/init/"
 STATUS_URL = "https://open.tiktokapis.com/v2/post/publish/status/fetch/"
-# The user.info.basic endpoint. This is the one that scope is actually for.
-USER_INFO = "https://open.tiktokapis.com/v2/user/info/"
+# No user-info endpoint: /v2/user/info/ needs user.info.basic, which this app
+# no longer requests. Which account the token belongs to is visible in the
+# developer portal and in the TikTok app's own drafts.
 # Direct Post (autopost, no manual tap) -- needs the video.publish scope and an
 # AUDITED production app. See post_direct() for why it's not live yet.
-# NOTE creator_info is a Direct Post endpoint, NOT a user.info.basic one: it
-# returns scope_not_authorized on our upload-only scope set. Use whoami() to
-# read the authorised account.
+# NOTE creator_info is a Direct Post endpoint: it returns scope_not_authorized
+# on our upload-only scope set.
 CREATOR_INFO = "https://open.tiktokapis.com/v2/post/publish/creator_info/query/"
 DIRECT_INIT = "https://open.tiktokapis.com/v2/post/publish/video/init/"
 
@@ -49,28 +78,34 @@ _HINT = ("Add it to ~/media_maker/.env, or source the file first:\n"
 
 def _key():
     import env_file
-    return env_file.require("TIKTOK_CLIENT_KEY", _HINT)
+    pre = "TIKTOK_SANDBOX_CLIENT_KEY" if _SANDBOX else "TIKTOK_CLIENT_KEY"
+    return env_file.require(pre, _HINT)
 
 
 def _secret():
     import env_file
-    return env_file.require("TIKTOK_CLIENT_SECRET", _HINT)
+    pre = "TIKTOK_SANDBOX_CLIENT_SECRET" if _SANDBOX else "TIKTOK_CLIENT_SECRET"
+    return env_file.require(pre, _HINT)
 
 
 def _save(tok: dict):
     tok["_obtained"] = time.time()
-    TOKEN_FILE.write_text(json.dumps(tok, indent=2))
+    _token_file().write_text(json.dumps(tok, indent=2))
 
 
 def authorize():
     """One-time: open the auth URL, take the pasted code, save tokens."""
     url = AUTH_URL + "?" + urllib.parse.urlencode({
         "client_key": _key(), "scope": SCOPES, "response_type": "code",
-        "redirect_uri": REDIRECT_URI, "state": "parkourflux",
+        "redirect_uri": REDIRECT_URI, "state": "carveteran",
     })
-    print("\n1. Open this URL and authorize your TikTok account:\n")
+    print(f"\nredirect_uri : {REDIRECT_URI}")
+    print(f"scope        : {SCOPES}")
+    print("Both must match the developer portal exactly, or the callback "
+          "fails.\n")
+    print("1. Open this URL and authorize your TikTok account:\n")
     print(url)
-    print("\n2. You'll land on parkourflux.pages.dev/callback -- that page "
+    print(f"\n2. You'll land on {SITE_HOST}/callback -- that page "
           "shows a 'code'. Copy it.\n")
     try:
         webbrowser.open(url)
@@ -87,7 +122,7 @@ def authorize():
     if "access_token" not in tok:
         raise RuntimeError(f"Token exchange failed: {tok}")
     _save(tok)
-    print(f"\nAuthorized -- token saved to {TOKEN_FILE.name} "
+    print(f"\nAuthorized -- token saved to {_token_file().name} "
           f"(open_id {str(tok.get('open_id',''))[:8]}...). You can post now.")
 
 
@@ -104,29 +139,13 @@ def _refresh(tok: dict) -> dict:
 
 
 def _access_token() -> str:
-    if not TOKEN_FILE.exists():
+    if not _token_file().exists():
         raise RuntimeError("Not authorized yet -- run: python tiktok_upload.py auth")
-    tok = json.loads(TOKEN_FILE.read_text())
+    tok = json.loads(_token_file().read_text())
     # access token lasts ~24h; refresh 5 min early using the ~1-year refresh token
     if time.time() > tok.get("_obtained", 0) + tok.get("expires_in", 86400) - 300:
         tok = _refresh(tok)
     return tok["access_token"]
-
-
-def whoami() -> dict:
-    """Which account is this token for? This is what user.info.basic buys.
-
-    Added because the app review submission states that user.info.basic
-    "confirms which account the token belongs to, so a video cannot reach the
-    wrong account" -- and nothing in this file actually called the user-info
-    endpoint, so that was a claim about behaviour that did not exist. It does
-    now. creator_info() is not a substitute: it belongs to Direct Post and
-    returns scope_not_authorized without video.publish.
-    """
-    r = requests.get(USER_INFO,
-                     headers={"Authorization": f"Bearer {_access_token()}"},
-                     params={"fields": "open_id,display_name"}, timeout=30)
-    return r.json()
 
 
 def post_to_drafts(video_path: str | Path) -> str:
@@ -135,15 +154,6 @@ def post_to_drafts(video_path: str | Path) -> str:
     video_path = Path(video_path)
     size = video_path.stat().st_size
     at = _access_token()
-    # Name the destination before uploading, so "cannot reach the wrong
-    # account" is something the operator can actually see. Non-fatal: an
-    # informational lookup must never be what stops a video going out.
-    try:
-        _who = (whoami().get("data") or {}).get("user") or {}
-        if _who.get("display_name"):
-            print(f"Uploading to TikTok account: {_who['display_name']}")
-    except Exception as _e:
-        print(f"(could not confirm the destination account: {_e})")
     # 1. init a single-chunk file upload (our 720p videos are only ~7-8 MB)
     r = requests.post(INBOX_INIT, headers={
         "Authorization": f"Bearer {at}",
@@ -204,7 +214,7 @@ def post_direct(video_path: str | Path, title: str = "",
 
     The app was rejected once already, so the resubmission deliberately asks
     for the narrowest set of permissions the tool actually uses:
-    user.info.basic + video.upload, drafts only. Requesting a permission we do
+    video.upload only, drafts only. Requesting a permission we do
     not exercise is a common rejection reason on its own, and video.publish
     additionally triggers TikTok's stricter Direct Post audit -- a higher bar
     to clear on a second attempt. /tiktok on the public site states plainly
@@ -273,6 +283,14 @@ def check_status(publish_id: str) -> dict:
 
 if __name__ == "__main__":
     import sys
+    # --sandbox must be applied before any command runs, since it decides which
+    # client key and which token file everything below reads.
+    if "--sandbox" in sys.argv:
+        sys.argv.remove("--sandbox")
+        _SANDBOX = True
+    if _SANDBOX:
+        print("SANDBOX mode -- TIKTOK_SANDBOX_CLIENT_KEY, "
+              f"{_token_file().name}")
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     if cmd == "auth":
         authorize()
@@ -287,15 +305,12 @@ if __name__ == "__main__":
             post_to_drafts(mp4s[-1])
     elif cmd == "direct" and len(sys.argv) > 2:
         post_direct(sys.argv[2])
-    elif cmd == "whoami":
-        print(json.dumps(whoami(), indent=2))
     elif cmd == "creator-info":
         print(json.dumps(creator_info(), indent=2))
     elif cmd == "status" and len(sys.argv) > 2:
         print(json.dumps(check_status(sys.argv[2]), indent=2))
     else:
         print("usage:\n  python tiktok_upload.py auth"
-              "\n  python tiktok_upload.py whoami   (which account -- user.info.basic)"
               "\n  python tiktok_upload.py post <video.mp4>"
               "\n  python tiktok_upload.py post-latest"
               "\n  python tiktok_upload.py status <publish_id>"
