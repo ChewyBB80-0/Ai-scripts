@@ -2,7 +2,7 @@
   {
     "id": "parkourflux",
     "name": "ParkourFlux AI",
-    "enabled": true,
+    "enabled": false,
     "handle": "@ParkourFlux",
     "genres": [
       "aitah",
