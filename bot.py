@@ -498,6 +498,11 @@ def _skip_reason(acc: Account, base: str, plat: str) -> str:
             return "already on Instagram — skipped as a duplicate"
         return "the Instagram block raised; see output/errors.log"
     if plat == "youtube":
+        # Mirrors the Instagram branch. Without this a dedupe SKIP fell through
+        # to "the upload raised", sending an alert that pointed at an
+        # errors.log containing no such error.
+        if base in _yt_posted():
+            return "already on YouTube — skipped as a duplicate"
         if todays_upload_count() >= config.YOUTUBE_DAILY_UPLOAD_LIMIT:
             return (f"YouTube daily upload quota reached "
                     f"({config.YOUTUBE_DAILY_UPLOAD_LIMIT})")
@@ -695,8 +700,14 @@ def _dialogue_caption(acc: Account, script: dict) -> str:
             f"{gift}{promo}\n\n{acc.ig_hashtags}")
 
 
-def _used_topics(acc: Account | None = None, limit: int = 40) -> list[str]:
+def _used_topics(acc: Account | None = None, limit: int = 250) -> list[str]:
     """Subjects this channel has already covered, newest last.
+
+    The limit was 40 while the car channel had 42 published videos, so the
+    OLDEST topics silently fell off the avoid list and became eligible again --
+    the whole catalogue recycles once it outgrows the window. Raised well above
+    the catalogue size; these are ~4-word phrases, so even 250 is a small
+    prompt cost next to re-rendering an episode nobody can publish.
 
     TWO sources, because either alone leaves a hole.
 
@@ -774,6 +785,19 @@ def _run_dialogue(acc: Account, topic_hint: str = "", force: bool = False,
     avoid = _used_topics(acc)
     script = dialogue_video.write_episode(topic=topic_hint, avoid=avoid)
     print(f"[{acc.id}] {script['title']}")
+
+    # The stem comes from the TOPIC, so a re-picked topic collides even under a
+    # brand-new title. Both platforms already refuse the duplicate at POST time,
+    # which is safe but only after a full render has been paid for -- 7m41s of
+    # CPU on 2026-08-30, reported as a "posting problem" that was really a
+    # generation problem. Check here, where it is still free.
+    _stem = dialogue_video.stem_for(script)
+    if _stem in (_yt_posted() | _ig_posted()):
+        print(f"[{acc.id}] topic already published as {_stem} -- "
+              "skipping before render. Nothing was wasted.")
+        log_error(f"[{acc.id}] regenerated an already-published topic "
+                  f"({_stem}); skipped before render")
+        return
     path = dialogue_video.render(script, clips, out=out_dir,
                                  handle=acc.handle, avatar=acc.logo or "")
 

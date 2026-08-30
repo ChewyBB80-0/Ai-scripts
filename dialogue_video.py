@@ -375,6 +375,19 @@ def overlay_faces(video: Path, spans: list, out: Path) -> Path:
     return out
 
 
+def stem_for(script: dict) -> str:
+    """The output filename stem for an episode, derived from its TOPIC.
+
+    Exposed so callers can know the stem BEFORE paying for a render. The topic
+    alone decides it, so a re-picked topic collides even when the LLM writes a
+    fresh title -- which is exactly how car_automatic_car_wash_damage was
+    regenerated on 2026-08-30 under a new title, rendered for 7m41s of CPU, and
+    then refused by both platforms' dedupe.
+    """
+    s = re.sub(r"[^a-z0-9]+", "_", script["topic"].lower()).strip("_")[:40] or "episode"
+    return f"car_{s}"
+
+
 def render(script: dict, footage: list[Path], out: Path | None = None,
            handle: str = "", avatar: str = "") -> Path:
     from assemble import assemble_video_dynamic
@@ -384,8 +397,7 @@ def render(script: dict, footage: list[Path], out: Path | None = None,
     # lands as an offer of more knowledge rather than a plea for a click.
     if END_CTA:
         lines.append(Line("VET", END_CTA_LINE, "smug"))
-    stem = re.sub(r"[^a-z0-9]+", "_", script["topic"].lower()).strip("_")[:40] or "episode"
-    stem = f"car_{stem}"
+    stem = stem_for(script)
 
     OUT_ = Path(out).resolve() if out else OUT.resolve()
     OUT_.mkdir(parents=True, exist_ok=True)
