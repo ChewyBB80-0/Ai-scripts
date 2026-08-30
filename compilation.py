@@ -19,8 +19,10 @@ Design notes:
     scatter a pt2 away from its pt1 and break the story.
   * Vertical is padded into 16:9 over a blurred copy of itself, so it doesn't
     sit in ugly pillarboxes on desktop.
-  * A numbered title card announces each story, so the result is a structured
-    video rather than a raw dump.
+  * Each story is announced by a lower third burned over its opening seconds
+    and the stories crossfade into one another (SEAMLESS). The old full-screen
+    title card is still there behind SEAMLESS=False; it cost 2s x N of dead air
+    and gave the viewer a hard stop to bail on.
   * Used stories are recorded, so the next compilation picks fresh ones.
 
     python compilation.py --minutes 12          # build (does not upload)
@@ -85,6 +87,17 @@ COMPILATION_COPY = {
 
 W, H = 1920, 1080          # 16:9 long-form, NOT vertical (must not be a Short)
 CARD_SECONDS = 2.0
+# Seamless mode: no per-story title cards, segments crossfade into each other.
+# The cards were 2s x N of dead air -- 28s of a 12:46 build -- and each one is a
+# hard stop that invites a swipe. Chapters still mark every story, so the
+# structure the cards provided survives without spending runtime on it.
+SEAMLESS = True
+XFADE_SECONDS = 0.75       # crossfade length at each join in seamless mode
+# The story label still appears in seamless mode -- as a lower third burned over
+# the opening of each story, not a screen of its own. Same information the card
+# carried, none of the dead air.
+LABEL_SECONDS = 4.0        # how long the lower third stays up
+LABEL_FADE = 0.4
 
 # Weekly build settings (--weekly, run hourly from run_all.py).
 COMPILATION_WEEKDAY = 6    # 6 = Sunday; a week's Shorts are done by then
@@ -154,6 +167,66 @@ def _mark_used(stems: list[str]):
                          encoding="utf-8")
 
 
+def _upload_marker(path: Path) -> Path:
+    """Sidecar recording that this compilation reached YouTube.
+
+    upload() printed the video id and returned it but wrote NOTHING to disk, so
+    nothing could tell a published compilation from one still waiting on the
+    owner's review -- post_log has never carried a single compilation row. That
+    is why --publish needs a marker of its own rather than reading the log.
+    """
+    return path.with_name(path.stem + "_uploaded.json")
+
+
+def _unpublished() -> list[Path]:
+    """Built-but-never-uploaded compilations for this account, newest first.
+
+    Reads the module globals, so it follows use_account() like everything else.
+    """
+    if not OUT_DIR.exists():
+        return []
+    # compilation_test_* is a --include-used render: never publishable, and it
+    # sorts newest so --publish would have picked it first.
+    return sorted((q for q in OUT_DIR.glob("compilation_*.mp4")
+                   if not q.name.startswith("compilation_test_")
+                   and not _upload_marker(q).exists()),
+                  key=lambda q: q.stat().st_mtime, reverse=True)
+
+
+def _record_upload(path: Path, vid: str):
+    """Mark it published: a sidecar for --publish, a post_log row for humans.
+
+    The row's status is `posted_compilation`, deliberately NOT `posted`.
+    rank_stories() treats every `posted`/`posted_manual` row as a STORY, so a
+    plain `posted` row here would fold the compilation back into the very pool
+    it was built from, and it could end up inside a later compilation.
+    """
+    from datetime import datetime
+    _upload_marker(path).write_text(
+        json.dumps({"video_id": vid, "at": datetime.now().isoformat()},
+                   indent=1), encoding="utf-8")
+    try:
+        with open(POST_LOG, "a", encoding="utf-8", newline="") as f:
+            csv.writer(f).writerow([datetime.now().isoformat(), path.stem,
+                                    vid, "posted_compilation"])
+    except Exception as e:
+        print(f"  (post_log not updated: {e})")
+
+
+def _publish(path: Path, theme: str | None = None,
+             privacy: str | None = None):
+    """Upload one already-built compilation and record that it went out."""
+    lu = OUT_DIR / (path.stem + "_lineup.json")
+    picked = json.loads(lu.read_text(encoding="utf-8")) if lu.exists() else None
+    print(f"publishing: {path.name}  ({path.stat().st_size/1e6:.0f} MB"
+          + (f", {len(picked)} stories)" if picked else ")")
+          + f"  privacy={privacy or config.PRIVACY_STATUS}")
+    vid = upload(path, picked, privacy=privacy, theme=theme)
+    if vid:
+        _record_upload(path, vid)
+    return vid
+
+
 def _base(stem: str) -> str:
     return re.sub(r"_pt\d+$", "", stem)
 
@@ -196,7 +269,18 @@ def _deleted_stems() -> set[str]:
     try:
         sys.path.insert(0, str(ROOT / "scripts"))
         from set_privacy import get_service
-        yt = get_service()
+        # THIS account's token, not the main channel's. Measured 2026-08-30:
+        # videos().list(id=...) is a GLOBAL lookup, so a deleted video reads as
+        # gone to any token and deletion is detected correctly either way. A
+        # PRIVATE video is different -- only its owner can see it. Asking with
+        # another channel's credentials therefore reports every private video
+        # as deleted, permanently barring those stems from all future
+        # compilations. That is the car_brake_squeal_diagnosis failure above,
+        # reachable again through scripts/set_privacy.py.
+        tok = getattr(ACCOUNT, "yt_token", None) if ACCOUNT else None
+        yt = get_service(tok)
+        if yt is None:
+            raise RuntimeError(f"no YouTube service for token {tok!r}")
     except Exception as e:
         print(f"WARNING: couldn't verify deleted videos ({e}) -- "
               "review the list before uploading.")
@@ -276,6 +360,85 @@ def rank_stories(include_used: bool = False) -> list[dict]:
                     "seconds": secs, "title": _title_for(files[0].stem)})
     out.sort(key=lambda g: -g["views"])
     return out
+
+
+def _make_label(text: str, index: int, path: Path):
+    """Transparent lower third: the card's information, over the video.
+
+    RGBA full-frame so ffmpeg overlays at 0:0 with no positioning maths.
+
+    Two things this has to survive: the source Shorts already carry a headline
+    card at the top and burned-in captions through the middle, so the label
+    lives at the very bottom and stays SHORT; and it sits over arbitrary
+    footage, so it needs both a scrim and a stroke -- either alone fails on a
+    bright frame.
+    """
+    from PIL import Image, ImageDraw
+    from hook_card import _font
+
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+
+    # Scrim: quadratic ramp so the top edge is imperceptible rather than a band.
+    top, peak = H - 260, 232
+    for y in range(top, H):
+        d.line([(0, y), (W, y)],
+               fill=(6, 8, 12, int(peak * ((y - top) / (H - top)) ** 2)))
+
+    num_font, body = _font(34), _font(46)
+    d.text((70, H - 132), f"STORY {index}", font=num_font,
+           fill=(138, 152, 255, 255), anchor="ls",
+           stroke_width=3, stroke_fill=(6, 8, 12, 220))
+
+    # ONE line. The card could afford three; a caption bar cannot, and a title
+    # that wraps here starts covering the footage it is annotating.
+    t = " ".join(text.split())
+    while d.textlength(t, font=body) > W - 140 and " " in t:
+        t = t.rsplit(" ", 1)[0]
+    if t != text:
+        t = t.rstrip(",.;:") + "…"
+    d.text((70, H - 72), t, font=body, fill=(242, 243, 247, 255), anchor="ls",
+           stroke_width=4, stroke_fill=(6, 8, 12, 230))
+    img.save(path)
+
+
+def _join_seamless(segments: list[Path], out: Path):
+    """Crossfade every segment into the next, in ONE re-encode pass.
+
+    Why a second pass instead of folding transitions into the per-segment
+    encode: that per-segment step is what lets one bad source file be DROPPED
+    rather than failing the whole build -- a lesson already paid for below. A
+    single giant filter graph over raw sources would give that up. So segments
+    stay individually encoded and normalised and this pass only joins them; the
+    price is one extra encode of the finished runtime.
+
+    xfade offsets are cumulative and measured against the GROWING OUTPUT, not
+    the inputs: after joining k+1 clips the timeline is sum(d0..dk) - k*X, so
+    the next offset is that, minus one more X. Getting this wrong does not
+    error -- it silently misplaces every transition.
+    """
+    durs = [_duration(x) for x in segments]
+    X = XFADE_SECONDS
+    cmd = ["ffmpeg", "-y", "-v", "error"]
+    for x in segments:
+        cmd += ["-i", str(x)]
+    vf, af = [], []
+    vprev, aprev = "[0:v]", "[0:a]"
+    cum = durs[0]
+    for i in range(1, len(segments)):
+        off = cum - X
+        vout, aout = f"[v{i}]", f"[a{i}]"
+        vf.append(f"{vprev}[{i}:v]xfade=transition=fade:"
+                  f"duration={X}:offset={off:.3f}{vout}")
+        af.append(f"{aprev}[{i}:a]acrossfade=d={X}{aout}")
+        vprev, aprev = vout, aout
+        cum += durs[i] - X
+    cmd += ["-filter_complex", ";".join(vf + af),
+            "-map", vprev, "-map", aprev,
+            "-c:v", "libx264", "-preset", config.FFMPEG_PRESET,
+            "-crf", config.FFMPEG_CRF, "-pix_fmt", "yuv420p", "-r", "30",
+            "-c:a", "aac", "-ar", "44100", "-ac", "2", str(out)]
+    return subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
 
 
 def _make_card(text: str, index: int, path: Path):
@@ -426,72 +589,30 @@ def _build_lock():
 
 
 def build(minutes: int = 12, dry_run: bool = False,
-          theme: str | None = None) -> Path | None:
+          theme: str | None = None,
+          include_used: bool = False,
+          from_lineup: str | None = None) -> Path | None:
     ensure_ffmpeg()
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     lock = _build_lock()
     if lock is None:
         return None
     try:
-        return _build_inner(minutes, dry_run, theme)
+        return _build_inner(minutes, dry_run, theme, include_used,
+                            from_lineup)
     finally:
         lock.unlink(missing_ok=True)
 
 
-def _build_inner(minutes: int = 12, dry_run: bool = False,
-                 theme: str | None = None) -> Path | None:
-    target = minutes * 60
+def _render(picked: list[dict], out: Path, theme: str | None = None,
+            mark_used: bool = True) -> Path | None:
+    """Encode the chosen stories and join them into `out`.
 
-    if theme == "auto":
-        # Prefer the biggest theme that clears the bar; fall back to mixed
-        # rather than shipping a themed video that can't keep its promise.
-        inv = themed_inventory()
-        theme = next((n for n, d in inv.items()
-                      if d["minutes"] >= MIN_THEME_MINUTES), None)
-        if theme:
-            print(f"Theme: {theme} ({inv[theme]['minutes']:.1f} min available)")
-        else:
-            best = next(iter(inv.items()), None)
-            print("No theme has enough material yet"
-                  + (f" (biggest: {best[0]} at {best[1]['minutes']:.1f} min, "
-                     f"need {MIN_THEME_MINUTES})" if best else "")
-                  + " -- building a mixed compilation.")
-
-    if theme:
-        inv = themed_inventory()
-        if theme not in inv:
-            print(f"No stories match theme '{theme}'. Available: "
-                  + ", ".join(f"{n} ({d['minutes']:.1f}m)" for n, d in inv.items()))
-            return None
-        ranked = inv[theme]["groups"]
-    else:
-        ranked = rank_stories()
-    if not ranked:
-        print("No unused rendered stories available.")
-        return None
-
-    picked, total = [], 0.0
-    for g in ranked:
-        if total >= target:
-            break
-        picked.append(g)
-        total += g["seconds"] + CARD_SECONDS
-
-    # Selection is by views; ORDER is by variety. Done after picking so the
-    # spacing never changes which episodes make the cut, only where they sit.
-    picked = _space_topics(picked)
-
-    if total < 240:
-        print(f"Only {total/60:.1f} min available -- too short to clear the "
-              "3-minute Shorts threshold safely. Render more stories first.")
-        return None
-
-    print(f"Building a {total/60:.1f} min compilation from {len(picked)} stories:")
-    for i, g in enumerate(picked, 1):
-        print(f"  {i:2}. [{g['views']:>4} views] {g['title'][:56]}")
-    if dry_run:
-        return None
-
+    Split out of _build_inner so a compilation can be RE-RENDERED from
+    its saved lineup -- same stories, same order -- without going back
+    through selection, which would pick a different set entirely now
+    that the originals are all marked used.
+    """
     # PID-scoped, because this directory is WIPED at the end of a build. It was
     # a fixed "_tmp", so two builds running at once deleted each other's
     # in-flight segments: on 2026-08-16 a manual build and the hourly --weekly
@@ -511,27 +632,53 @@ def _build_inner(minutes: int = 12, dry_run: bool = False,
           f"[fg]scale=-1:{H}[fgs];[bgb][fgs]overlay=(W-w)/2:0")
 
     for i, g in enumerate(picked, 1):
-        card_png = tmp / f"card_{i:02d}.png"
-        _make_card(g["title"], i, card_png)
-        card_mp4 = tmp / f"card_{i:02d}.mp4"
-        subprocess.run(["ffmpeg", "-y", "-v", "error", "-loop", "1",
-                        "-i", str(card_png), "-f", "lavfi",
-                        "-i", "anullsrc=r=44100:cl=stereo",
-                        "-t", str(CARD_SECONDS), "-c:v", "libx264",
-                        "-preset", config.FFMPEG_PRESET, "-crf", config.FFMPEG_CRF,
-                        "-pix_fmt", "yuv420p", "-r", "30",
-                        "-c:a", "aac", "-shortest", str(card_mp4)],
-                       capture_output=True, timeout=180)
-        segments.append(card_mp4)
-
-        for f in g["files"]:
-            seg = tmp / f"seg_{i:02d}_{f.stem[:20]}.mp4"
-            r = subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(f),
-                            "-filter_complex", vf, "-c:v", "libx264",
-                            "-preset", config.FFMPEG_PRESET, "-crf", config.FFMPEG_CRF,
+        if not SEAMLESS:
+            card_png = tmp / f"card_{i:02d}.png"
+            _make_card(g["title"], i, card_png)
+            card_mp4 = tmp / f"card_{i:02d}.mp4"
+            subprocess.run(["ffmpeg", "-y", "-v", "error", "-loop", "1",
+                            "-i", str(card_png), "-f", "lavfi",
+                            "-i", "anullsrc=r=44100:cl=stereo",
+                            "-t", str(CARD_SECONDS), "-c:v", "libx264",
+                            "-preset", config.FFMPEG_PRESET,
+                            "-crf", config.FFMPEG_CRF,
                             "-pix_fmt", "yuv420p", "-r", "30",
-                            "-c:a", "aac", "-ar", "44100", "-ac", "2",
-                            str(seg)], capture_output=True, text=True, timeout=900)
+                            "-c:a", "aac", "-shortest", str(card_mp4)],
+                           capture_output=True, timeout=180)
+            segments.append(card_mp4)
+
+        for j, f in enumerate(g["files"]):
+            seg = tmp / f"seg_{i:02d}_{f.stem[:20]}.mp4"
+            cmd = ["ffmpeg", "-y", "-v", "error", "-i", str(f)]
+            # Only the FIRST part of a saga gets labelled -- pt2 is the same
+            # story continuing, and re-announcing it reads as a mistake.
+            if SEAMLESS and j == 0:
+                lab = tmp / f"label_{i:02d}.png"
+                _make_label(g["title"], i, lab)
+                # -loop 1 or the PNG is a single frame at t=0: there is
+                # nothing for fade to act on and nothing to overlay for the
+                # next 4 seconds. It fails SILENTLY -- the encode still
+                # succeeds, just with no label. shortest=1 on the overlay stops
+                # the now-infinite image from extending the segment.
+                cmd += ["-loop", "1", "-i", str(lab)]
+                fc = (vf + "[base];[1:v]format=rgba,"
+                      f"fade=t=in:st=0.5:d={LABEL_FADE}:alpha=1,"
+                      f"fade=t=out:st={0.5 + LABEL_SECONDS:.2f}:"
+                      f"d={LABEL_FADE}:alpha=1[lbl];"
+                      # The quotes are REQUIRED and are not shell quoting:
+                      # inside a filtergraph a comma separates filters, so an
+                      # unprotected between(t,a,b) parses as "filter 0.5".
+                      # ffmpeg strips these itself.
+                      "[base][lbl]overlay=0:0:shortest=1:enable="
+                      f"'between(t,0.5,"
+                      f"{0.5 + LABEL_SECONDS + LABEL_FADE:.2f})'")
+            else:
+                fc = vf
+            cmd += ["-filter_complex", fc, "-c:v", "libx264",
+                    "-preset", config.FFMPEG_PRESET, "-crf", config.FFMPEG_CRF,
+                    "-pix_fmt", "yuv420p", "-r", "30",
+                    "-c:a", "aac", "-ar", "44100", "-ac", "2", str(seg)]
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
             if seg.exists() and r.returncode == 0:
                 segments.append(seg)
             else:
@@ -542,8 +689,6 @@ def _build_inner(minutes: int = 12, dry_run: bool = False,
     lst = tmp / "concat.txt"
     lst.write_text("".join(f"file '{s.as_posix()}'\n" for s in segments),
                    encoding="utf-8")
-    from datetime import date
-    out = OUT_DIR / f"compilation_{date.today():%Y%m%d}.mp4"
     if dropped:
         print(f"WARNING: {len(dropped)} story segment(s) failed to encode and "
               "were left out:")
@@ -551,9 +696,19 @@ def _build_inner(minutes: int = 12, dry_run: bool = False,
             print(f"   {name}: {err or '(no stderr)'}")
 
     expected = sum(_duration(s) for s in segments)
-    cj = subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0",
-                         "-i", str(lst), "-c", "copy", str(out)],
-                        capture_output=True, text=True, timeout=900)
+    if SEAMLESS and len(segments) > 1:
+        # Every join overlaps, so the finished file is legitimately SHORTER
+        # than its parts. Without this the truncation guard below would abort
+        # a perfectly good build.
+        expected -= XFADE_SECONDS * (len(segments) - 1)
+        print(f"joining {len(segments)} segments with {XFADE_SECONDS}s "
+              "crossfades (one re-encode pass)...")
+        cj = _join_seamless(segments, out)
+    else:
+        cj = subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "concat",
+                             "-safe", "0", "-i", str(lst), "-c", "copy",
+                             str(out)],
+                            capture_output=True, text=True, timeout=900)
     if cj.returncode != 0 or (cj.stderr or "").strip():
         print(f"concat reported: {(cj.stderr or '').strip()[:300]}")
     got = _duration(out) if out.exists() else 0.0
@@ -580,7 +735,10 @@ def _build_inner(minutes: int = 12, dry_run: bool = False,
           f"{out.stat().st_size/1e6:.0f} MB, {W}x{H}")
     if dur < 185:
         print("WARNING: under ~3 minutes; YouTube may still class this a Short.")
-    _mark_used([f.stem for g in picked for f in g["files"]])
+    if mark_used:
+        _mark_used([f.stem for g in picked for f in g["files"]])
+    else:
+        print("material NOT marked used (test build or re-render).")
     # stash the line-up so upload() can build chapters from it
     (OUT_DIR / (out.stem + "_lineup.json")).write_text(
         json.dumps([{"title": g["title"], "seconds": g["seconds"]}
@@ -588,11 +746,115 @@ def _build_inner(minutes: int = 12, dry_run: bool = False,
     return out
 
 
+def _build_inner(minutes: int = 12, dry_run: bool = False,
+                 theme: str | None = None,
+                 include_used: bool = False,
+                 from_lineup: str | None = None) -> Path | None:
+    target = minutes * 60
+
+    if from_lineup:
+        # Re-render an EXISTING compilation -- same stories, same order -- after
+        # a presentation change. Re-picking by rank would silently choose a
+        # different set, because everything in the original is now marked used
+        # and the ranking has moved on. The lineup stores only titles, so match
+        # back to the live groups by title and keep the lineup's order.
+        lp = Path(from_lineup)
+        if not lp.is_absolute():
+            lp = OUT_DIR / lp.name
+        if not lp.exists():
+            print(f"No such lineup: {lp}")
+            return None
+        want = [x["title"] for x in json.loads(lp.read_text(encoding="utf-8"))]
+        by_title = {g["title"]: g for g in rank_stories(include_used=True)}
+        picked, missing = [], []
+        for t in want:
+            (picked.append(by_title[t]) if t in by_title else missing.append(t))
+        if missing:
+            # Silently rebuilding a shorter video than the one being replaced
+            # is exactly the failure this module already guards against.
+            print(f"ABORTING: {len(missing)} of {len(want)} stories from that "
+                  "lineup are no longer on disk:")
+            for t in missing:
+                print(f"   {t[:70]}")
+            return None
+        out = OUT_DIR / (lp.name.replace("_lineup.json", "") + ".mp4")
+        print(f"Re-rendering {out.name} from its saved lineup — "
+              f"{len(picked)} stories, unchanged order.")
+        for i, g in enumerate(picked, 1):
+            print(f"  {i:2}. {g['title'][:60]}")
+        if dry_run:
+            return None
+        return _render(picked, out, theme, mark_used=False)
+
+    if theme == "auto":
+        # Prefer the biggest theme that clears the bar; fall back to mixed
+        # rather than shipping a themed video that can't keep its promise.
+        inv = themed_inventory()
+        theme = next((n for n, d in inv.items()
+                      if d["minutes"] >= MIN_THEME_MINUTES), None)
+        if theme:
+            print(f"Theme: {theme} ({inv[theme]['minutes']:.1f} min available)")
+        else:
+            best = next(iter(inv.items()), None)
+            print("No theme has enough material yet"
+                  + (f" (biggest: {best[0]} at {best[1]['minutes']:.1f} min, "
+                     f"need {MIN_THEME_MINUTES})" if best else "")
+                  + " -- building a mixed compilation.")
+
+    if theme:
+        inv = themed_inventory()
+        if theme not in inv:
+            print(f"No stories match theme '{theme}'. Available: "
+                  + ", ".join(f"{n} ({d['minutes']:.1f}m)" for n, d in inv.items()))
+            return None
+        ranked = inv[theme]["groups"]
+    else:
+        ranked = rank_stories(include_used=include_used)
+    if not ranked:
+        print("No unused rendered stories available.")
+        return None
+
+    picked, total = [], 0.0
+    for g in ranked:
+        if total >= target:
+            break
+        picked.append(g)
+        total += g["seconds"] + (0.0 if SEAMLESS else CARD_SECONDS)
+
+    # Selection is by views; ORDER is by variety. Done after picking so the
+    # spacing never changes which episodes make the cut, only where they sit.
+    picked = _space_topics(picked)
+
+    if total < 240:
+        print(f"Only {total/60:.1f} min available -- too short to clear the "
+              "3-minute Shorts threshold safely. Render more stories first.")
+        return None
+
+    print(f"Building a {total/60:.1f} min compilation from {len(picked)} stories:")
+    for i, g in enumerate(picked, 1):
+        print(f"  {i:2}. [{g['views']:>4} views] {g['title'][:56]}")
+    if dry_run:
+        return None
+
+    from datetime import date
+    # A test build must never land on the real filename: today's compilation
+    # may already be uploaded, and overwriting it would silently desync the
+    # published video from the file the marker says was published.
+    out = OUT_DIR / (f"compilation_test_{date.today():%Y%m%d}.mp4" if include_used
+                     else f"compilation_{date.today():%Y%m%d}.mp4")
+    return _render(picked, out, theme, mark_used=not include_used)
+
+
 def _chapters(picked: list[dict]) -> str:
     """YouTube chapter timestamps. These become clickable chapters, which
     matter a lot on a compilation -- a viewer who can jump to a story that
     interests them stays instead of bouncing. YouTube requires the first to be
     0:00 and at least three in total."""
+    # Timestamps must match how the file is actually assembled. With cards each
+    # story is preceded by CARD_SECONDS; in seamless mode every join instead
+    # OVERLAPS by XFADE_SECONDS, so the timeline is shorter than the sum of its
+    # parts. Getting this wrong drifts cumulatively -- 2s per story would be 28s
+    # of error by story 14, putting every chapter on the wrong video.
     lines, t = [], 0.0
     for i, g in enumerate(picked, 1):
         m, s = divmod(int(t), 60)
@@ -604,7 +866,10 @@ def _chapters(picked: list[dict]) -> str:
         if len(title) > 75:
             title = title[:75].rsplit(" ", 1)[0] + "…"
         lines.append(f"{stamp} — {title}")
-        t += CARD_SECONDS + g["seconds"]
+        if SEAMLESS:
+            t += g["seconds"] - XFADE_SECONDS * len(g.get("files") or [1])
+        else:
+            t += CARD_SECONDS + g["seconds"]
     return "\n".join(lines)
 
 
@@ -659,6 +924,13 @@ def upload(path: Path, picked: list[dict] | None = None,
     # Custom thumbnail -- without one YouTube picks a random frame, which on a
     # compilation means a blurred piece of gameplay as the video's face. Needs
     # a phone-verified channel (done 2026-07-26). Never fails the upload.
+    #
+    # Gated on the SAME flag bot.py has always checked. This module ignored it,
+    # so turning thumbnails off switched them off for Shorts and silently left
+    # them on for compilations.
+    if not getattr(config, "AUTO_THUMBNAIL", True):
+        print("Thumbnail skipped (config.AUTO_THUMBNAIL is off).")
+        return vid
     try:
         import thumbnail
         mins = int(_duration(path) // 60)
@@ -669,7 +941,7 @@ def upload(path: Path, picked: list[dict] | None = None,
                              theme=theme,
                              out=OUT_DIR / f"{path.stem}_thumb.jpg",
                              subtitle=sub)
-        thumbnail.set_on_video(vid, th)
+        thumbnail.set_on_video(vid, th, token_file=acc.yt_token)
     except Exception as e:
         print(f"Thumbnail step skipped (video is fine): {e}")
     return vid
@@ -727,6 +999,28 @@ if __name__ == "__main__":
                          "enough unused material; never fails the run")
     ap.add_argument("--account", default="",
                     help="channel id (default: the first account)")
+    # The weekly job BUILDS but deliberately never uploads, so finished
+    # compilations pile up waiting on review -- and --upload could not publish
+    # them, because it rebuilds first and the build has no material left once
+    # the weekly run has marked every story used. --publish skips the build.
+    ap.add_argument("--publish", nargs="?", const="latest", default=None,
+                    metavar="PATH",
+                    help="upload an ALREADY-BUILT compilation without "
+                         "rebuilding: newest unpublished one, or a given path")
+    # config.PRIVACY_STATUS is "public", so a publish goes straight live. The
+    # weekly job exists precisely so a human vets title and thumbnail first --
+    # let that human land it unlisted, look, then flip with scripts/set_privacy.py.
+    ap.add_argument("--from-lineup", default=None, metavar="PATH",
+                    help="re-render the EXACT stories in a saved "
+                         "*_lineup.json (same order) -- for restyling a "
+                         "compilation that already exists")
+    ap.add_argument("--include-used", action="store_true",
+                    help="rebuild from ALREADY-USED stories, writing to "
+                         "compilation_test_*.mp4 and marking nothing used "
+                         "(for trying a transition/label change)")
+    ap.add_argument("--privacy", default=None,
+                    choices=["public", "unlisted", "private"],
+                    help="override upload privacy (default: config.PRIVACY_STATUS)")
     a = ap.parse_args()
     _acc = use_account(a.account)
     # --weekly loops every channel below, so naming one here would imply the
@@ -767,9 +1061,47 @@ if __name__ == "__main__":
             tot += g["seconds"]
             print(f"  [{g['views']:>4} views] {g['seconds']:5.1f}s  {g['title'][:52]}")
         print(f"\n  total available: {tot/60:.1f} min")
+    elif a.publish:
+        if a.publish == "latest":
+            pend = _unpublished()
+            if not pend:
+                print("Nothing to publish: every built compilation for this "
+                      "channel is already marked uploaded.")
+                raise SystemExit(1)
+            target = pend[0]
+            if len(pend) > 1:
+                print(f"{len(pend)} unpublished; taking the newest. "
+                      f"Others: {', '.join(q.name for q in pend[1:])}")
+        else:
+            target = Path(a.publish)
+            if not target.is_absolute():
+                target = OUT_DIR / target.name
+            if not target.exists():
+                print(f"No such compilation: {target}")
+                raise SystemExit(1)
+        if a.dry_run:
+            print(f"--dry-run: would publish {target.name} "
+                  f"({target.stat().st_size/1e6:.0f} MB). Nothing uploaded.")
+            raise SystemExit(0)
+        _publish(target, theme=a.theme, privacy=a.privacy)
     else:
-        p = build(a.minutes, dry_run=a.dry_run, theme=a.theme)
-        if p and a.upload:
-            lu = OUT_DIR / (p.stem + "_lineup.json")
-            picked = json.loads(lu.read_text(encoding="utf-8")) if lu.exists() else None
-            upload(p, picked, theme=a.theme)
+        p = build(a.minutes, dry_run=a.dry_run, theme=a.theme,
+                  include_used=a.include_used, from_lineup=a.from_lineup)
+        # A dry run must never reach the uploader. _build_inner can hand back a
+        # path in dry-run mode, and the old `if p and a.upload` would then have
+        # published it for real.
+        if a.upload and a.dry_run:
+            print("--dry-run given: build only, refusing to upload.")
+        elif p and a.upload:
+            _publish(p, theme=a.theme, privacy=a.privacy)
+        elif a.upload and not p:
+            # Used to exit 0 in silence, which reads as "uploaded fine".
+            pend = _unpublished()
+            print("Nothing was built, so nothing was uploaded.")
+            if pend:
+                print(f"  {len(pend)} compilation(s) already built and waiting:")
+                for q in pend[:5]:
+                    print(f"    {q.name}  ({q.stat().st_size/1e6:.0f} MB)")
+                print("  Publish one with:  --publish "
+                      "(newest) or --publish <name>")
+            raise SystemExit(1)

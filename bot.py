@@ -377,7 +377,11 @@ def _post_video(path: str | Path, title: str, acc: Account,
                         phrase = _short_text(title)
                     th = thumbnail.build(phrase, theme=_theme_of(title),
                                          out=thumbnail.OUT_DIR / f"{video_id}.jpg")
-                    thumbnail.set_on_video(video_id, th)
+                    # acc.yt_token, matching the upload three lines above.
+                    # Without it this authenticates as the MAIN channel and
+                    # 403s on any other channel's video.
+                    thumbnail.set_on_video(video_id, th,
+                                           token_file=acc.yt_token)
                 except Exception as te:
                     print(f"Thumbnail skipped (video is fine): {te}")
         except Exception as e:

@@ -203,13 +203,24 @@ def build(text: str, theme: str | None = None, out: Path | None = None,
     return out
 
 
-def set_on_video(video_id: str, path: Path):
-    """Attach the thumbnail to an uploaded video (needs force-ssl scope)."""
+def set_on_video(video_id: str, path: Path, token_file: str | None = None):
+    """Attach the thumbnail to an uploaded video (needs force-ssl scope).
+
+    token_file: the OWNING channel's token. Without it get_service() returns the
+    MAIN channel's credentials, and setting a thumbnail on another channel's
+    video is a 403 "The request might not be properly authorized" -- which is
+    exactly what every Car Veteran compilation hit. get_service() has taken this
+    argument since the second channel existed; this caller simply never passed
+    it. Defaults to None so single-channel callers are unchanged.
+    """
     import sys
     sys.path.insert(0, str(ROOT / "scripts"))
     from set_privacy import get_service
     from googleapiclient.http import MediaFileUpload
-    get_service().thumbnails().set(
+    svc = get_service(token_file)
+    if svc is None:
+        raise RuntimeError(f"no YouTube service for token {token_file!r}")
+    svc.thumbnails().set(
         videoId=video_id,
         media_body=MediaFileUpload(str(path), mimetype="image/jpeg")).execute()
     print(f"Thumbnail set on https://youtube.com/watch?v={video_id}")

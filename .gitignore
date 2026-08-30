@@ -35,3 +35,6 @@ voice/
 *.mp4
 *.mp3
 *.bak
+
+# Timestamped backups (*.bak-YYYYMMDD-HHMMSS) do NOT match the *.bak rule above.
+*.bak-*
