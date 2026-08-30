@@ -130,8 +130,13 @@ def write_episode(topic: str = "", episode: int = 1, api_key: str | None = None,
     client = anthropic.Anthropic(api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"))
     subject = topic or "pick one specific way drivers waste money or damage their car"
     if avoid:
+        # NO slice below. A second [-40:] cap sat here on top of the one in
+        # _used_topics(), so raising that limit changed nothing: a 45-entry list
+        # still arrived, was trimmed to the newest 40, and silently dropped the
+        # 5 OLDEST -- one being "automatic car wash damage", which the model then
+        # re-picked on 2026-08-30. Bound the list in ONE place, upstream.
         subject += ("\n\nALREADY COVERED -- pick something genuinely different, "
-                    "not a rewording of these:\n- " + "\n- ".join(avoid[-40:]))
+                    "not a rewording of these:\n- " + "\n- ".join(avoid))
     prompt = f"""Write a short two-character dialogue for a vertical short-form video
 about cars. The channel teaches everyday drivers things that save them money.
 
