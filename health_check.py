@@ -278,6 +278,57 @@ def collect() -> list[str]:
     except Exception as e:
         problems.append(f"**Instagram token check failed:** {str(e)[:90]}")
 
+    # --- 6. the video host ------------------------------------------------
+    # os is imported locally here, matching the style of the checks above --
+    # this module does not import it at the top level.
+    import os
+    # Instagram posting needs a PUBLIC url for the render, which comes from R2.
+    # If R2 lapses, uploads fail and posts silently stop -- and nothing else in
+    # this file would notice, because the pipeline itself keeps running happily.
+    # That gap was found 2026-09-01; before this check the only symptom was
+    # missing posts, days later.
+    #
+    # Deliberately quiet when VIDEO_HOST_ENDPOINT is unset: that means R2 is not
+    # configured and video_host falls back to litterbox, which is a choice, not
+    # a fault. Alarming on a working fallback is exactly the noise this file
+    # warns about at the top.
+    if os.environ.get("VIDEO_HOST_ENDPOINT"):
+        try:
+            import boto3
+            from botocore.config import Config as _BotoConfig
+            # Short timeouts and no retries: this is a liveness probe on a timer,
+            # not a transfer. It must fail fast rather than wedge the healthcheck.
+            _c = boto3.client(
+                "s3",
+                endpoint_url=os.environ["VIDEO_HOST_ENDPOINT"],
+                aws_access_key_id=os.environ["VIDEO_HOST_KEY_ID"],
+                aws_secret_access_key=os.environ["VIDEO_HOST_SECRET"],
+                config=_BotoConfig(connect_timeout=10, read_timeout=15,
+                                   retries={"max_attempts": 1}))
+            _c.head_bucket(Bucket=os.environ["VIDEO_HOST_BUCKET"])
+        except Exception as e:
+            # Name the failure mode: an expired key and an unreachable endpoint
+            # need completely different fixes, and "R2 broken" helps nobody.
+            kind = type(e).__name__
+            detail = str(e)[:90]
+            if "403" in detail or "Forbidden" in detail or "InvalidAccessKeyId" in detail:
+                # R2 answers 403 for a bucket that does not exist as well as for a
+                # bad key -- it will not confirm whether a bucket is there. Verified
+                # 2026-09-01 with a deliberately bogus bucket name. So do NOT claim
+                # the key was revoked; name both possibilities or the message sends
+                # you down the wrong path at 3am.
+                why = (f"403 -- either the key was rotated/revoked, or bucket "
+                       f"{os.environ.get('VIDEO_HOST_BUCKET','?')} is wrong. R2 "
+                       f"returns 403 for both, so check the key first, then the name")
+            elif "404" in detail or "NoSuchBucket" in detail:
+                why = f"bucket {os.environ.get('VIDEO_HOST_BUCKET','?')} not found"
+            else:
+                why = "endpoint unreachable"
+            problems.append(
+                f"**Video host (R2) is down: {why}.** Instagram posting needs a "
+                f"public URL from it, so IG posts will fail silently while the "
+                f"rest of the pipeline looks fine. ({kind}: {detail})")
+
     return problems
 
 
