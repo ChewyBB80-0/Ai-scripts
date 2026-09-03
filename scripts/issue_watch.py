@@ -89,10 +89,21 @@ def check_feedback_layer() -> Result:
 
 
 def check_window_data() -> Result:
-    """#11 -- the posting-window change needs a week of posts to judge."""
+    """#11 -- the posting-window change needs a week of posts to judge.
+
+    Counts DISTINCT VIDEOS, not log rows. _posted_rows accepts posted,
+    posted_manual and posted_instagram, so a video that goes to YouTube and is
+    then cross-posted to Instagram wrote two rows and was counted twice. On
+    2026-09-02 that reported "28 posts ... (want ~14)" when the true figure was
+    14 YouTube posts from 15 distinct stems -- exactly on target, not double.
+
+    The gate still tripped, so nothing was mis-decided, but it tripped on half
+    the evidence it believed it had. With Instagram cross-posting disabled the
+    same threshold would have taken twice as long to clear and the reason would
+    not have been visible."""
     from accounts import post_window
     since = datetime.now().astimezone() - timedelta(days=7)
-    n = 0
+    stems = set()
     for acc in _accounts():
         if not post_window(acc):
             continue
@@ -103,11 +114,14 @@ def check_window_data() -> Result:
                 # local so they compare against an aware cutoff.
                 if when.tzinfo is None:
                     when = when.astimezone()
-                if when >= since:
-                    n += 1
             except ValueError:
-                pass
-    return n >= 14, f"{n} posts inside a posting window in the last 7 days (want ~14)"
+                continue
+            if when >= since:
+                # (account, stem) so two channels posting the same stem still
+                # count separately, but one stem on two platforms counts once.
+                stems.add((getattr(acc, "name", str(acc)), r[1]))
+    n = len(stems)
+    return n >= 14, f"{n} videos posted inside a posting window in the last 7 days (want ~14)"
 
 
 def check_compilation() -> Result:
