@@ -1,20 +1,26 @@
 """
 dialogue_video.py
-PROTOTYPE -- two-character dialogue videos for the car channel.
+Two-character dialogue videos, one renderer shared by every dialogue channel.
 
-Format (the Brian/Peter structure, with original characters):
-a grizzled veteran muscle car explains something about cars while a rookie asks
-the questions a real person would actually ask. Every question is a micro-hook,
-and the series is numbered so following it is how you get the next one.
+Format (the Brian/Peter structure, with original characters): a grizzled
+veteran explains something while a rookie asks the questions a real person
+would actually ask. Every question is a micro-hook, and the series is
+numbered so following it is how you get the next one. Started as a
+carveteran-only prototype; the cast, voices, face art and prompt framing now
+come from the account's own `dialogue_cast` (see accounts.py), so a second
+dialogue channel gets its own characters instead of rendering as Rusty and
+Sparky talking about someone else's topic. An account with no `dialogue_cast`
+still renders through carveteran's original hardcoded one -- see _CARVETERAN_CAST.
 
 Why this is a separate module: the main pipeline (bot.py) narrates one story
 with one voice. This needs a per-line voice, merged word timings across many
 audio clips, and a speaker-aware caption style -- different enough that bolting
 it onto bot.run_once would tangle both.
 
-    python dialogue_video.py                 # generate + render one episode
-    python dialogue_video.py --topic "..."   # force the subject
-    python dialogue_video.py --episode 3     # set the episode number
+    python dialogue_video.py                          # carveteran, one episode
+    python dialogue_video.py --account duke_biscuit --footage footage/duke_biscuit
+    python dialogue_video.py --topic "..."             # force the subject
+    python dialogue_video.py --episode 3               # set the episode number
 """
 
 import argparse
@@ -70,18 +76,110 @@ OUT = (ROOT / _DEF.out_dir) if _DEF else (ROOT / "output" / "carveteran")
 # delivery, the longer every comma and full stop is held, and his lines carry the
 # most punctuation of the two. The accent split and the -18Hz do the "older,
 # heavier" work on their own, so the rate does not have to.
-VET = {"name": "Rusty", "voice": "en-US-ChristopherNeural",
-       "rate": "+5%", "pitch": "-18Hz", "side": "left",
-       "faces": ["deadpan", "smug", "eyeroll", "explaining"],
-       "default_face": "deadpan"}
-ROOKIE = {"name": "Sparky", "voice": "en-GB-RyanNeural",
-          "rate": "+12%", "pitch": "+30Hz", "side": "right",
-          "faces": ["happy", "question", "shocked", "delighted"],
-          "default_face": "happy"}
-SPEAKERS = {"VET": VET, "ROOKIE": ROOKIE}
+#
+# carveteran's accounts.json entry has never carried a dialogue_cast field, so
+# this dict is what it still renders from -- cast_for() falls back to it for any
+# account whose JSON entry has none. A second dialogue channel gets its own
+# cast entirely in its own accounts.json entry (see Duke & Biscuit) rather
+# than editing this one, which is why nothing here has become a parameter.
+_CARVETERAN_CAST = {
+    "vet": {
+        "name": "Rusty", "voice": "en-US-ChristopherNeural",
+        "rate": "+5%", "pitch": "-18Hz",
+        "faces": ["deadpan", "smug", "eyeroll", "explaining"],
+        "default_face": "deadpan",
+        "bio": ("an old, worn-out muscle car. Decades on the road, seen "
+                "every scam, dry and blunt but never mean. He is the one "
+                "who KNOWS things."),
+        "face_hints": {
+            "deadpan": "flat, unimpressed -- his default",
+            "smug": "he is about to reveal the catch",
+            "eyeroll": "the industry has done something stupid again",
+            "explaining": "delivering the actual information",
+        },
+    },
+    "rookie": {
+        "name": "Sparky", "voice": "en-GB-RyanNeural",
+        "rate": "+12%", "pitch": "+30Hz",
+        "faces": ["happy", "question", "shocked", "delighted"],
+        "default_face": "happy",
+        "bio": ("a brand-new compact car, eager and a bit naive. He asks "
+                "the questions a real person would actually ask -- "
+                "including the dumb ones."),
+        "face_hints": {
+            "happy": "his default",
+            "question": "he is ASKING -- use this for any line ending in a question mark",
+            "shocked": "he just heard a number he did not like",
+            "delighted": "he just learned something great",
+        },
+    },
+    "about": "cars. The channel teaches everyday drivers things that save them money.",
+    "default_topic_hint": "pick one specific way drivers waste money or damage their car",
+    "safety_rail": (
+        "SAFETY RAIL, and this one outranks the format. This channel's premise is "
+        "\"don't let the shop overcharge you\", which pulls every script toward "
+        "telling the viewer NOT to get something looked at. Sometimes paying is "
+        "the correct answer, and on a safety system being wrong hurts someone.\n"
+        "  * If a symptom has BOTH a harmless and a dangerous cause, you must give "
+        "the test that tells them apart. Never present the harmless cause as what "
+        "it \"usually\" is and stop there.\n"
+        "  * Never tell the viewer to ignore, wait out, or skip inspection of "
+        "brakes, steering, tyres, airbags, or anything else that stops or steers "
+        "the car. Saving money is the topic; the viewer's safety is the constraint.\n"
+        "  * Real failure this rule exists for: an episode said a brake squeal is "
+        "\"usually just surface rust\", said to drive it off and not call the "
+        "shop, and never mentioned that pads have a metal wear indicator designed "
+        "to squeal exactly like that when they are nearly gone. A working "
+        "mechanic publicly replied that it was bad advice and would let someone "
+        "cut into their rotors. He was right."
+    ),
+    "end_cta_line": "Want to learn more? Hit that subscribe button.",
+    "stem_prefix": "car_",
+    # bot.py's Instagram caption writer (_dialogue_caption) reads this --
+    # one line naming the cast and what the channel does, used as the
+    # follow-ask under the episode's payoff line.
+    "follow_line": ("Rusty and Sparky break down one dealership upsell at a "
+                    "time, so you stop paying for work you can do yourself. "
+                    "Follow for the next one."),
+}
 
-# Character art: branding/carveteran/faces/<name>_<emotion>.png, transparent.
-FACE_DIR = ROOT / "branding" / "carveteran" / "faces"
+
+def cast_for(acc) -> dict:
+    """acc's own dialogue_cast, or carveteran's original hardcoded one when it
+    has none. Keeps every pre-existing dialogue account rendering exactly as
+    it always did -- only an account that opts in with its own dialogue_cast
+    gets different characters, voices, prompt framing or face art."""
+    c = getattr(acc, "dialogue_cast", None) if acc else None
+    return c or _CARVETERAN_CAST
+
+
+def _speakers(cast: dict) -> dict:
+    """VET/ROOKIE speaker dicts for one cast, with their fixed screen side
+    attached. Side is not part of the JSON schema -- VET stays left and
+    ROOKIE stays right for every channel, so it is not a thing a new
+    channel's config can get wrong or leave out."""
+    v = dict(cast["vet"]); v["side"] = "left"
+    r = dict(cast["rookie"]); r["side"] = "right"
+    return {"VET": v, "ROOKIE": r}
+
+
+def _face_dir(acc) -> Path:
+    """branding/<account id>/faces -- same convention accounts.footage_root()
+    uses for footage/<id>/. carveteran's id IS "carveteran", so this
+    reproduces its existing path with no special-casing."""
+    aid = acc.id if acc else "carveteran"
+    return ROOT / "branding" / aid / "faces"
+
+
+# Module-level fallbacks for the bare CLI (`python dialogue_video.py` with no
+# --account) and any caller that still invokes build_audio/overlay_faces
+# without a resolved cast. Computed from _DEF exactly once, same as OUT above
+# -- when _DEF is carveteran (the only dialogue account until a second one
+# exists), these reproduce the original hardcoded VET/ROOKIE/FACE_DIR values
+# byte for byte.
+SPEAKERS = _speakers(cast_for(_DEF))
+FACE_DIR = _face_dir(_DEF)
+
 # Fraction of frame width the character occupies. 0.42 read as small and
 # pasted-on at phone size; 0.60 makes them feel like they are in the scene.
 # Captions moved to the vertical middle to make room.
@@ -102,12 +200,13 @@ GAP_MS = 120
 # the character swap is the thing that reads as the change.
 CUT_MIN, CUT_MAX = 8.0, 13.0
 
-# Closing subscribe ask, spoken by VET after the last line. An explainer channel
-# earns subscribers differently from a story channel: a story is finished when
-# it ends, but a tip implies there are more tips -- so the ask names the ongoing
-# value ("learn more") rather than just asking for the click.
+# Whether to append a closing subscribe ask, spoken by VET after the last
+# line. An explainer channel earns subscribers differently from a story
+# channel: a story is finished when it ends, but a tip implies there are more
+# tips -- so the ask (each cast's own end_cta_line) names the ongoing value
+# ("learn more") rather than just asking for the click. This toggle is shared
+# by every channel; the line itself is per-cast.
 END_CTA = True
-END_CTA_LINE = "Want to learn more? Hit that subscribe button."
 
 
 @dataclass
@@ -118,17 +217,24 @@ class Line:
 
 
 def write_episode(topic: str = "", episode: int = 1, api_key: str | None = None,
-                  avoid: list[str] | None = None) -> dict:
+                  avoid: list[str] | None = None, acc=None) -> dict:
     """Ask Claude for a dialogue script. Returns {title, topic, lines[]}.
 
     avoid: subjects already covered. Without this an unattended run picks its own
     topic with no memory and re-covers the oil-change markup every few days,
     which reads as a channel that has run out of things to say.
+
+    acc: which dialogue channel this is for -- resolves its cast, voices and
+    prompt framing via cast_for(). None (the bare-CLI default) falls back to
+    carveteran's.
     """
     import anthropic
 
+    cast = cast_for(acc or _DEF)
+    vet, rookie = cast["vet"], cast["rookie"]
+
     client = anthropic.Anthropic(api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"))
-    subject = topic or "pick one specific way drivers waste money or damage their car"
+    subject = topic or cast["default_topic_hint"]
     if avoid:
         # NO slice below. A second [-40:] cap sat here on top of the one in
         # _used_topics(), so raising that limit changed nothing: a 45-entry list
@@ -137,14 +243,17 @@ def write_episode(topic: str = "", episode: int = 1, api_key: str | None = None,
         # re-picked on 2026-08-30. Bound the list in ONE place, upstream.
         subject += ("\n\nALREADY COVERED -- pick something genuinely different, "
                     "not a rewording of these:\n- " + "\n- ".join(avoid))
+
+    def _face_line(spk):
+        hints = spk.get("face_hints", {})
+        return ", ".join(f"{f} ({hints[f]})" if hints.get(f) else f for f in spk["faces"])
+
     prompt = f"""Write a short two-character dialogue for a vertical short-form video
-about cars. The channel teaches everyday drivers things that save them money.
+about {cast['about']}
 
 CHARACTERS (use these exact speaker tags):
-- VET, called Rusty: an old, worn-out muscle car. Decades on the road, seen
-  every scam, dry and blunt but never mean. He is the one who KNOWS things.
-- ROOKIE, called Sparky: a brand-new compact car, eager and a bit naive. He asks
-  the questions a real person would actually ask -- including the dumb ones.
+- VET, called {vet['name']}: {vet['bio']}
+- ROOKIE, called {rookie['name']}: {rookie['bio']}
 
 TOPIC: {subject}
 
@@ -155,26 +264,11 @@ RULES:
   in the first sentence. No throat-clearing, no greetings, no "hey guys".
 - Include at least one CONCRETE number (a real dollar amount, interval, or
   percentage). Specificity is what makes it feel true.
-- The information must be genuinely accurate and useful -- real, checkable car
+- The information must be genuinely accurate and useful -- real, checkable
   advice. Never invent a fake statistic.
-- SAFETY RAIL, and this one outranks the format. This channel's premise is
-  "don't let the shop overcharge you", which pulls every script toward telling
-  the viewer NOT to get something looked at. Sometimes paying is the correct
-  answer, and on a safety system being wrong hurts someone.
-  * If a symptom has BOTH a harmless and a dangerous cause, you must give the
-    test that tells them apart. Never present the harmless cause as what it
-    "usually" is and stop there.
-  * Never tell the viewer to ignore, wait out, or skip inspection of brakes,
-    steering, tyres, airbags, or anything else that stops or steers the car.
-    Saving money is the topic; the viewer's safety is the constraint.
-  * Real failure this rule exists for: an episode said a brake squeal is
-    "usually just surface rust", said to drive it off and not call the shop,
-    and never mentioned that pads have a metal wear indicator designed to
-    squeal exactly like that when they are nearly gone. A working mechanic
-    publicly replied that it was bad advice and would let someone cut into
-    their rotors. He was right.
-- VET gets the payoff line. End on ONE short line that either lands the money
-  saved or baits a comment (e.g. "How many of you are guilty of this?").
+- {cast['safety_rail']}
+- VET gets the payoff line. End on ONE short line that either lands the value
+  or baits a comment (e.g. "How many of you are guilty of this?").
 - Keep it PG. Dry humour, not insults.
 - Correct grammar and punctuation -- this is displayed on screen as captions.
 - Write for the ear. Every full stop and comma becomes a real pause when this is
@@ -187,12 +281,8 @@ RULES:
 EXPRESSIONS -- every line also carries the face that character pulls while
 saying it. This is what makes the characters feel alive, so pick the one that
 actually fits the line rather than defaulting.
-- VET (Rusty) may use: deadpan (flat, unimpressed -- his default),
-  smug (he is about to reveal the catch), eyeroll (the industry has done
-  something stupid again), explaining (delivering the actual information).
-- ROOKIE (Sparky) may use: happy (his default), question (he is ASKING --
-  use this for any line ending in a question mark), shocked (he just heard a
-  number he did not like), delighted (he just learned something great).
+- VET ({vet['name']}) may use: {_face_line(vet)}.
+- ROOKIE ({rookie['name']}) may use: {_face_line(rookie)}.
 
 Return ONLY JSON, no other text:
 {{"title": "<scroll-stopping title, under 80 chars, curiosity-driven>",
@@ -237,10 +327,16 @@ def _duration_ms(path: Path) -> int:
         return 0
 
 
-def build_audio(lines: list[Line], stem: str, out: Path | None = None) -> tuple[Path, list[dict]]:
+def build_audio(lines: list[Line], stem: str, out: Path | None = None,
+                speakers: dict | None = None) -> tuple[Path, list[dict]]:
     """Render every line in its speaker's voice, concatenate with a beat
     between them, and shift each line's word timings by where it actually
-    starts -- otherwise captions would restart at zero on every line."""
+    starts -- otherwise captions would restart at zero on every line.
+
+    speakers: this channel's resolved VET/ROOKIE dicts (see _speakers()).
+    Defaults to the module-level fallback for a caller that has not resolved
+    an account's cast itself."""
+    speakers = speakers or SPEAKERS
     # resolve(): the concat demuxer resolves the paths INSIDE its list file
     # relative to that file's own directory, not the process CWD. A relative
     # out dir therefore produced output/<acc>/output/<acc>/... , the concat
@@ -268,7 +364,7 @@ def build_audio(lines: list[Line], stem: str, out: Path | None = None) -> tuple[
     spans = []          # (speaker, emotion, start_ms, end_ms) -- drives the faces
     for i, ln in enumerate(lines):
         mp3 = OUT_ / f"_{stem}_{i:02d}.mp3"
-        words = asyncio.run(_speak(ln.text, SPEAKERS[ln.speaker], mp3))
+        words = asyncio.run(_speak(ln.text, speakers[ln.speaker], mp3))
         p = OUT_ / f"_{stem}_{i:02d}.wav"
         subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(mp3),
                         "-ar", "24000", "-ac", "1", "-c:a", "pcm_s16le",
@@ -279,7 +375,7 @@ def build_audio(lines: list[Line], stem: str, out: Path | None = None) -> tuple[
                               "start_ms": w["start_ms"] + offset,
                               "end_ms": w["end_ms"] + offset})
         dur = _duration_ms(p)
-        spk = SPEAKERS[ln.speaker]
+        spk = speakers[ln.speaker]
         face = ln.emotion if ln.emotion in spk["faces"] else spk["default_face"]
         # Hold the face through the trailing gap so the character does not blink
         # out between lines -- it should feel like they are waiting their turn.
@@ -302,7 +398,8 @@ def build_audio(lines: list[Line], stem: str, out: Path | None = None) -> tuple[
     return voice, all_words, spans
 
 
-def overlay_faces(video: Path, spans: list, out: Path) -> Path:
+def overlay_faces(video: Path, spans: list, out: Path,
+                  speakers: dict | None = None, face_dir: Path | None = None) -> Path:
     """Composite the speaking character onto the finished video.
 
     A second ffmpeg pass rather than a change to assemble_video_dynamic: that
@@ -310,15 +407,22 @@ def overlay_faces(video: Path, spans: list, out: Path) -> Path:
     specific to dialogue. Keeping it here means the main channel cannot break
     because of this.
 
-    Each speaker keeps a FIXED side -- Rusty left, Sparky right -- so position
-    becomes a second cue for who is talking, on top of the voice and the face.
-    Returns the original video untouched if anything is missing or ffmpeg fails;
-    a missing PNG must not cost the whole render.
+    Each speaker keeps a FIXED side (VET left, ROOKIE right, set in
+    _speakers()) so position becomes a second cue for who is talking, on top
+    of the voice and the face. Returns the original video untouched if
+    anything is missing or ffmpeg fails; a missing PNG must not cost the
+    whole render.
+
+    speakers/face_dir: this channel's resolved cast and its face-art
+    directory. Default to the module-level fallback for a caller that has
+    not resolved an account's cast itself.
     """
+    speakers = speakers or SPEAKERS
+    face_dir = face_dir or FACE_DIR
     used = sorted({(sp, face) for sp, face, _, _ in spans})
     paths = {}
     for sp, face in used:
-        p = FACE_DIR / f"{SPEAKERS[sp]['name'].lower()}_{face}.png"
+        p = face_dir / f"{speakers[sp]['name'].lower()}_{face}.png"
         if not p.exists():
             print(f"  (missing face {p.name} -- skipping the overlay pass)")
             return video
@@ -359,7 +463,7 @@ def overlay_faces(video: Path, spans: list, out: Path) -> Path:
         j = taken[(sp, face)]; taken[(sp, face)] += 1
         t0, t1 = a / 1000, b / 1000
         s = SLIDE_S
-        if SPEAKERS[sp]["side"] == "left":
+        if speakers[sp]["side"] == "left":
             x = (f"if(lt(t-{t0:.2f},{s}),-overlay_w+((t-{t0:.2f})/{s})*(overlay_w+{MARGIN}),{MARGIN})")
         else:
             x = (f"if(lt(t-{t0:.2f},{s}),main_w-((t-{t0:.2f})/{s})*(overlay_w+{MARGIN}),"
@@ -380,7 +484,7 @@ def overlay_faces(video: Path, spans: list, out: Path) -> Path:
     return out
 
 
-def stem_for(script: dict) -> str:
+def stem_for(script: dict, acc=None) -> str:
     """The output filename stem for an episode, derived from its TOPIC.
 
     Exposed so callers can know the stem BEFORE paying for a render. The topic
@@ -388,25 +492,34 @@ def stem_for(script: dict) -> str:
     fresh title -- which is exactly how car_automatic_car_wash_damage was
     regenerated on 2026-08-30 under a new title, rendered for 7m41s of CPU, and
     then refused by both platforms' dedupe.
+
+    acc: whose stem_prefix to use (each channel gets its own, e.g. "car_" vs
+    "dog_", so two channels' episodes never collide on the same stem).
     """
+    prefix = cast_for(acc or _DEF).get("stem_prefix", "episode_")
     s = re.sub(r"[^a-z0-9]+", "_", script["topic"].lower()).strip("_")[:40] or "episode"
-    return f"car_{s}"
+    return f"{prefix}{s}"
 
 
 def render(script: dict, footage: list[Path], out: Path | None = None,
-           handle: str = "", avatar: str = "") -> Path:
+           handle: str = "", avatar: str = "", acc=None) -> Path:
     from assemble import assemble_video_dynamic
+
+    acc = acc or _DEF
+    cast = cast_for(acc)
+    speakers = _speakers(cast)
+    face_dir = _face_dir(acc)
 
     lines = [Line(l["speaker"], l["text"], l.get("emotion", "")) for l in script["lines"]]
     # VET delivers the closing subscribe ask -- he's the authority voice, so it
     # lands as an offer of more knowledge rather than a plea for a click.
     if END_CTA:
-        lines.append(Line("VET", END_CTA_LINE, "smug"))
-    stem = stem_for(script)
+        lines.append(Line("VET", cast["end_cta_line"], "smug"))
+    stem = stem_for(script, acc)
 
     OUT_ = Path(out).resolve() if out else OUT.resolve()
     OUT_.mkdir(parents=True, exist_ok=True)
-    voice, words, spans = build_audio(lines, stem, OUT_)
+    voice, words, spans = build_audio(lines, stem, OUT_, speakers=speakers)
     ass = OUT_ / f"{stem}_captions.ass"
     build_caption_file(words, ass, centre=True)
 
@@ -421,13 +534,13 @@ def render(script: dict, footage: list[Path], out: Path | None = None,
         card = str(OUT_ / f"{stem}_card.png")
         build_hook_card(format_hook_for_display(script.get("title") or script["topic"]),
                         card,
-                        handle=(handle or (_DEF.handle if _DEF else
+                        handle=(handle or (acc.handle if acc else
                                            "@thecarveteran")),
                         # Resolved here rather than by the caller: accounts.json
                         # stores logo as a repo-relative path, and this renders
                         # from whatever CWD the scheduler happened to use.
                         avatar_path=str(ROOT / (
-                            avatar or (_DEF.logo if _DEF else "")
+                            avatar or (acc.logo if acc else "")
                             or "branding/logo_carveteran.png")))
         first = next((b for _, _, a, b in spans[:1]), None)
         card_seconds = (first / 1000 + 0.4) if first else 3.5
@@ -441,7 +554,7 @@ def render(script: dict, footage: list[Path], out: Path | None = None,
                            hook_card_path=card, hook_card_seconds=card_seconds)
 
     out_path = OUT_ / f"{stem}.mp4"
-    final = overlay_faces(plain, spans, out_path)
+    final = overlay_faces(plain, spans, out_path, speakers=speakers, face_dir=face_dir)
     if final != out_path:                  # overlay skipped -- keep one artefact
         plain.replace(out_path)
     else:
@@ -456,21 +569,29 @@ def main():
     ap.add_argument("--topic", default="")
     ap.add_argument("--episode", type=int, default=1)
     ap.add_argument("--footage", default="footage/driving")
+    # Which dialogue account to render as -- omit for carveteran (the
+    # original, still the bare-CLI default via _DEF). Needed to hand-test a
+    # second dialogue channel's cast/voices/prompt before wiring it into bot.py.
+    ap.add_argument("--account", default="")
     args = ap.parse_args()
 
     ensure_ffmpeg()
+    acc = None
+    if args.account:
+        from accounts import get_account
+        acc = get_account(args.account)
     clips = sorted((ROOT / args.footage).glob("*.mp4"))
     if not clips:
         raise SystemExit(f"No footage in {args.footage}/")
 
     print("Writing the episode...")
-    script = write_episode(args.topic, args.episode)
+    script = write_episode(args.topic, args.episode, acc=acc)
     print(f"\nTITLE: {script['title']}\n")
     for l in script["lines"]:
         print(f"  {l['speaker']:6} {l['text']}")
 
     print("\nRendering...")
-    out = render(script, clips)
+    out = render(script, clips, acc=acc)
     print(f"\nDone -> {out}")
 
 

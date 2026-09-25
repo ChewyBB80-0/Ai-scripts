@@ -13,7 +13,7 @@ cross-posts. The bot picks it up on the next hourly run.
 
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -57,6 +57,29 @@ class Account:
     # errored -- enabled:false was all that stood in the way. run_once() checks
     # this now, so the mistake is refused rather than remembered.
     content_type: str = "story"
+    # Cast + prompt content for a "dialogue" channel. When set, must be
+    # complete -- dialogue_video and bot.py read every one of these keys with
+    # no fallback of their own:
+    #   vet, rookie   -- {name, voice, rate, pitch, faces, default_face, bio,
+    #                     face_hints} for each of the two speaker roles. VET
+    #                     is the authority (fixed screen-left), ROOKIE the
+    #                     questioner (fixed screen-right) -- see _speakers().
+    #   about              -- what the channel covers, dropped into the script
+    #                         prompt's opening sentence ("... a video about {about}").
+    #   default_topic_hint -- fallback TOPIC instruction when no topic is forced.
+    #   safety_rail         -- the one paragraph of the prompt that outranks
+    #                          the format; never skip writing one.
+    #   end_cta_line   -- VET's spoken closing subscribe ask.
+    #   follow_line    -- one line naming the cast, used in the Instagram
+    #                     caption's follow-ask (bot.py's _dialogue_caption).
+    #   stem_prefix    -- filename prefix for this channel's episodes, e.g.
+    #                     "car_" -- keeps two dialogue channels' stems from
+    #                     ever colliding.
+    # Empty for every dialogue account except the ones given their own --
+    # dialogue_video.cast_for() falls back to carveteran's original hardcoded
+    # cast (_CARVETERAN_CAST) when this is empty, so an account that predates
+    # this field keeps rendering exactly as it always did.
+    dialogue_cast: dict = field(default_factory=dict)
     # Publishing metadata. The defaults are the story channel's, which is what
     # these were hardcoded to before a second channel existed -- posting car
     # advice with them would have labelled it Minecraft parkour short fiction,

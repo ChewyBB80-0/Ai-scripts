@@ -687,6 +687,8 @@ def _dialogue_caption(acc: Account, script: dict) -> str:
     are a tip: someone sends one because they feel something, and "you just
     saved money" is that feeling. A generic "support us" has nothing behind it.
     """
+    import dialogue_video
+
     payoff = _standalone_payoff(script)
     gift = ("\n\nIf this saved you money, a ⭐ says thanks louder than a like."
             if _gifts_available(acc) else "")
@@ -694,9 +696,9 @@ def _dialogue_caption(acc: Account, script: dict) -> str:
     # what this caption exists for; a sales line above it turns an explainer
     # into an advert. Empty for any channel with nothing to sell.
     promo = f"\n\n{acc.promo_ig}" if getattr(acc, "promo_ig", "") else ""
+    follow_line = dialogue_video.cast_for(acc)["follow_line"]
     return (f"{script['title']}\n\n{payoff}\n\n"
-            f"Rusty and Sparky break down one dealership upsell at a time, so you "
-            f"stop paying for work you can do yourself. Follow for the next one."
+            f"{follow_line}"
             f"{gift}{promo}\n\n{acc.ig_hashtags}")
 
 
@@ -721,12 +723,19 @@ def _used_topics(acc: Account | None = None, limit: int = 250) -> list[str]:
     supply of car-maintenance subjects is effectively unlimited, and a near-
     duplicate episode is far more costly than skipping one idea.
     """
+    import dialogue_video
+    # Each dialogue channel's own stem prefix ("car_", "dog_", ...) -- without
+    # this a second channel's stems never got the removeprefix stripped, and
+    # its avoid-list entries would read as "dog_some_topic" instead of "some
+    # topic" whenever the fallback (topic field missing) path was hit.
+    prefix = dialogue_video.cast_for(acc).get("stem_prefix", "car_")
+
     out = []
     if POST_LOG.exists():
         with open(POST_LOG) as f:
             for row in csv.reader(f):
                 if len(row) >= 4 and row[3] in USED_STATUSES and row[1]:
-                    t = row[1].removeprefix("car_").replace("_", " ")
+                    t = row[1].removeprefix(prefix).replace("_", " ")
                     if t not in out:
                         out.append(t)
     # Every render leaves <stem>_script.json next to the video, posted or not.
@@ -740,7 +749,7 @@ def _used_topics(acc: Account | None = None, limit: int = 250) -> list[str]:
                     continue
                 t = (d.get("topic") or "").strip().lower()
                 if not t:
-                    t = p.stem.removesuffix("_script").removeprefix("car_").replace("_", " ")
+                    t = p.stem.removesuffix("_script").removeprefix(prefix).replace("_", " ")
                 if t and t not in out:
                     out.append(t)
         except Exception:
@@ -783,7 +792,7 @@ def _run_dialogue(acc: Account, topic_hint: str = "", force: bool = False,
     print(f"[{acc.id}] footage pool: {len(clips)} clip(s)")
 
     avoid = _used_topics(acc)
-    script = dialogue_video.write_episode(topic=topic_hint, avoid=avoid)
+    script = dialogue_video.write_episode(topic=topic_hint, avoid=avoid, acc=acc)
     print(f"[{acc.id}] {script['title']}")
 
     # The stem comes from the TOPIC, so a re-picked topic collides even under a
@@ -791,7 +800,7 @@ def _run_dialogue(acc: Account, topic_hint: str = "", force: bool = False,
     # which is safe but only after a full render has been paid for -- 7m41s of
     # CPU on 2026-08-30, reported as a "posting problem" that was really a
     # generation problem. Check here, where it is still free.
-    _stem = dialogue_video.stem_for(script)
+    _stem = dialogue_video.stem_for(script, acc)
     if _stem in (_yt_posted() | _ig_posted()):
         print(f"[{acc.id}] topic already published as {_stem} -- "
               "skipping before render. Nothing was wasted.")
@@ -799,7 +808,7 @@ def _run_dialogue(acc: Account, topic_hint: str = "", force: bool = False,
                   f"({_stem}); skipped before render")
         return
     path = dialogue_video.render(script, clips, out=out_dir,
-                                 handle=acc.handle, avatar=acc.logo or "")
+                                 handle=acc.handle, avatar=acc.logo or "", acc=acc)
 
     base = Path(path).stem
     (out_dir / f"{base}_caption.txt").write_text(
