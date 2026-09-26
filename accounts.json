@@ -2,7 +2,7 @@
   {
     "id": "parkourflux",
     "name": "Duke & Biscuit",
-    "enabled": false,
+    "enabled": true,
     "handle": "@DukeAndBiscuit",
     "yt_token": "token.json",
     "footage_dir": "footage/parkourflux",
@@ -30,7 +30,12 @@
         "voice": "en-US-ChristopherNeural",
         "rate": "0%",
         "pitch": "0Hz",
-        "faces": ["deadpan", "smug", "eyeroll", "explaining"],
+        "faces": [
+          "deadpan",
+          "smug",
+          "eyeroll",
+          "explaining"
+        ],
         "default_face": "deadpan",
         "bio": "an old, street-smart rescue dog. Years figuring out what actually keeps a dog healthy, seen every fad and gimmick, dry and blunt but never mean. He is the one who KNOWS things.",
         "face_hints": {
@@ -45,7 +50,12 @@
         "voice": "en-US-AnaNeural",
         "rate": "0%",
         "pitch": "0Hz",
-        "faces": ["happy", "question", "shocked", "delighted"],
+        "faces": [
+          "happy",
+          "question",
+          "shocked",
+          "delighted"
+        ],
         "default_face": "happy",
         "bio": "a young, over-eager puppy. Enthusiastic and a bit naive, but he has real instincts of his own -- sometimes his gut is right and Duke has to admit it. He asks the questions a real owner would actually ask, including the dumb ones.",
         "face_hints": {
