@@ -28,8 +28,8 @@
       "vet": {
         "name": "Duke",
         "voice": "en-US-ChristopherNeural",
-        "rate": "0%",
-        "pitch": "0Hz",
+        "rate": "+0%",
+        "pitch": "+0Hz",
         "faces": [
           "deadpan",
           "smug",
@@ -48,8 +48,8 @@
       "rookie": {
         "name": "Biscuit",
         "voice": "en-US-AnaNeural",
-        "rate": "0%",
-        "pitch": "0Hz",
+        "rate": "+0%",
+        "pitch": "+0Hz",
         "faces": [
           "happy",
           "question",
@@ -103,7 +103,7 @@
     "out_dir": "output/carveteran",
     "post_after_hour": 12,
     "post_before_hour": 21,
-    "promo_ig": "Stickers of these two \u2014 link in bio. Code RUSTY-IG for 10% off.",
+    "promo_ig": "Stickers of these two — link in bio. Code RUSTY-IG for 10% off.",
     "promo_yt": "Rusty & Sparky stickers: https://idlehoursco.com/collections/rusty-and-sparky\nCode RUSTY-YT for 10% off.",
     "tiktok": true
   }
