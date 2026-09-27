@@ -25,7 +25,7 @@ GENRES = ("aitah", "confession", "revenge", "creepy")
 
 @dataclass
 class Account:
-    id: str = "parkourflux"
+    id: str = "duke_biscuit"
     name: str = "ParkourFlux AI"
     enabled: bool = True
     handle: str = "@ParkourFlux"
@@ -47,7 +47,7 @@ class Account:
     # account should have this: the app's name, website, icon and redirect
     # URI are all tied to a single channel, so "connected to TikTok" is a
     # property of that channel, not of the installation. Repointed from
-    # parkourflux to carveteran on 2026-08-19; approval is still pending,
+    # duke_biscuit to carveteran on 2026-08-19; approval is still pending,
     # so this says which channel OWNS the integration, not that it works.
     tiktok: bool = False
     # What this channel makes. bot.py's whole pipeline is Reddit-style narrated
@@ -119,7 +119,7 @@ class Account:
     # So: fall back for the default account, return nothing for the rest. A
     # missing credential then reads as "not configured" (the IG block in
     # _post_video is guarded on acc.ig_token) instead of "configured wrong".
-    _DEFAULT_ID = "parkourflux"
+    _DEFAULT_ID = "duke_biscuit"
 
     @property
     def ig_user_id(self):
@@ -153,7 +153,7 @@ def _from_dict(d: dict) -> Account:
         if hasattr(a, k) and not isinstance(getattr(Account, k, None), property):
             setattr(a, k, tuple(v) if k == "genres" else v)
     # non-default accounts get namespaced data files automatically
-    if a.id != "parkourflux" and "post_log" not in d:
+    if a.id != "duke_biscuit" and "post_log" not in d:
         a.out_dir = f"output/accounts/{a.id}"
         a.post_log = f"{a.out_dir}/post_log.csv"
         a.queue_file = f"{a.out_dir}/post_queue/queue.json"

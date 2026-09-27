@@ -51,7 +51,7 @@ def _update_history(per_acc: dict, fetched: str):
     `acc`, and the chart falls back to the flat keys for older rows.
     """
     hist = json.loads(HIST.read_text()) if HIST.exists() else []
-    main = per_acc.get("parkourflux") or next(iter(per_acc.values()), {})
+    main = per_acc.get("duke_biscuit") or next(iter(per_acc.values()), {})
     if not hist or hist[-1].get("t") != fetched:
         hist.append({
             "t": fetched,
@@ -590,7 +590,7 @@ function seriesValue(row,plat){
   yt=ids.reduce((n,i)=>n+((row.acc[i]||{}).yt||0),0);
   ig=ids.reduce((n,i)=>n+((row.acc[i]||{}).ig||0),0);
  }else{
-  const isMain=CUR==='all'||CUR==='parkourflux';
+  const isMain=CUR==='all'||CUR==='duke_biscuit';
   yt=isMain?(row.yt!==undefined?row.yt:(row.views||0)):0;
   ig=isMain?(row.ig!==undefined?row.ig:0):0;
  }
@@ -599,7 +599,7 @@ function seriesValue(row,plat){
 function subsValue(row){
  if(row.acc){const ids=CUR==='all'?Object.keys(row.acc):[CUR];
   return ids.reduce((n,i)=>n+((row.acc[i]||{}).subs||0),0)}
- return (CUR==='all'||CUR==='parkourflux')?(row.subs||0):0;
+ return (CUR==='all'||CUR==='duke_biscuit')?(row.subs||0):0;
 }
 const PLAT_LABEL={all:'all platforms',yt:'YouTube',ig:'Instagram'};
 const PLAT_COLOR={all:'var(--mint)',yt:'var(--red)',ig:'var(--pink)'};
@@ -607,7 +607,7 @@ function drawViewsChart(){let h=D.history.slice();
  // For ONE channel, drop snapshots from before it existed. Without this a
  // channel that launched today plots a flat zero line back to July and the
  // footnote claims 500 snapshots of it, which is simply untrue.
- if(CUR!=='all')h=h.filter(r=>r.acc?(r.acc[CUR]!==undefined):(CUR==='parkourflux'));
+ if(CUR!=='all')h=h.filter(r=>r.acc?(r.acc[CUR]!==undefined):(CUR==='duke_biscuit'));
  const scoped=h.length;
  if(chartRange){const cut=Date.now()-chartRange*864e5;h=h.filter(x=>new Date(x.t).getTime()>=cut)}
  let pts;if(chartMode==='delta'){pts=[];for(let i=1;i<h.length;i++)pts.push({x:new Date(h[i].t).getTime(),y:Math.max(0,seriesValue(h[i],chartPlat)-seriesValue(h[i-1],chartPlat))})}

@@ -15,7 +15,7 @@ are two possible problems, and they need opposite fixes.
 Guessing between those wastes weeks, hence this.
 
 Needs the yt-analytics.readonly scope (see youtube_upload.SCOPES). If the token
-predates that scope, re-auth once:  python add_channel.py parkourflux
+predates that scope, re-auth once:  python add_channel.py duke_biscuit
 
     python scripts/retention_report.py            # top 10 by views
     python scripts/retention_report.py --all
@@ -58,13 +58,13 @@ def _services():
         raise SystemExit(
             "This token has no analytics scope, so retention can't be read.\n"
             "Re-auth once on a machine with a browser:\n"
-            f"    python add_channel.py {ACCOUNT_ID or 'parkourflux'}\n"
+            f"    python add_channel.py {ACCOUNT_ID or 'duke_biscuit'}\n"
             "(youtube_upload.SCOPES already requests it.)\n\n"
             "Or read it by hand: YouTube Studio -> a video -> Analytics ->\n"
             "'Average percentage viewed'.")
     if not creds.valid:
         raise SystemExit("Token invalid -- run: python add_channel.py "
-                         f"{ACCOUNT_ID or 'parkourflux'}")
+                         f"{ACCOUNT_ID or 'duke_biscuit'}")
     return (build("youtube", "v3", credentials=creds),
             build("youtubeAnalytics", "v2", credentials=creds))
 

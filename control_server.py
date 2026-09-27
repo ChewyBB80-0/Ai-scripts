@@ -279,9 +279,9 @@ def t_recent(inp=None):
 
 TOOLS = [
     {"name": "get_stats", "description": "Current YouTube + Instagram performance: views, subs, top videos. Covers EVERY channel by default and returns a per-channel breakdown plus a combined total -- pass account to narrow to one. Always say which channel a number belongs to; the two channels post different content to different audiences and a merged figure hides which one is working.",
-     "input_schema": {"type": "object", "properties": {"account": {"type": "string", "description": "account id (parkourflux, carveteran) or 'all' for every channel (default)"}}}},
-    {"name": "post_video", "description": "Generate and post a NEW video right now on a given channel -- a Reddit-style story for parkourflux, a two-voice car episode for carveteran; the pipeline picks the right one from the account. Choose the platform: 'both' (default), 'youtube', or 'instagram'. Optional topic hint. If the user asks to post but doesn't say where, ask which platform(s) first.",
-     "input_schema": {"type": "object", "properties": {"topic": {"type": "string", "description": "optional topic/theme"}, "platform": {"type": "string", "enum": ["both", "youtube", "instagram"], "description": "which platform(s) to post to (default both)"}, "account": {"type": "string", "description": "which channel: parkourflux (Reddit-style stories) or carveteran (two-voice car tips). Defaults to parkourflux. ASK if the user has not said which -- posting a story to the car channel is the wrong content on the wrong audience."}}}},
+     "input_schema": {"type": "object", "properties": {"account": {"type": "string", "description": "account id (duke_biscuit, carveteran) or 'all' for every channel (default)"}}}},
+    {"name": "post_video", "description": "Generate and post a NEW video right now on a given channel -- a Reddit-style story for duke_biscuit, a two-voice car episode for carveteran; the pipeline picks the right one from the account. Choose the platform: 'both' (default), 'youtube', or 'instagram'. Optional topic hint. If the user asks to post but doesn't say where, ask which platform(s) first.",
+     "input_schema": {"type": "object", "properties": {"topic": {"type": "string", "description": "optional topic/theme"}, "platform": {"type": "string", "enum": ["both", "youtube", "instagram"], "description": "which platform(s) to post to (default both)"}, "account": {"type": "string", "description": "which channel: duke_biscuit (Reddit-style stories) or carveteran (two-voice car tips). Defaults to duke_biscuit. ASK if the user has not said which -- posting a story to the car channel is the wrong content on the wrong audience."}}}},
     {"name": "update", "description": "Deploy the latest pushed code to this machine (git pull, fast-forward only). Use when the user says update/deploy/pull/'get the fix', or when a bug has been fixed remotely and needs to reach the box. Safe: it never discards local work, and reports if a restart is still needed.",
      "input_schema": {"type": "object", "properties": {}}},
     {"name": "set_autonomy", "description": "Turn autonomous posting (every 2 hours) on or off.",
@@ -289,7 +289,7 @@ TOOLS = [
     {"name": "get_autonomy", "description": "Check if autonomous posting is currently on.",
      "input_schema": {"type": "object", "properties": {}}},
     {"name": "recent_posts", "description": "List the last few things posted and where. Covers EVERY channel by default, interleaved by time, with the channel named on each row -- pass account to narrow to one. Always keep the channel visible when relaying these; the two channels post different content and an unlabelled list reads as if it were all one.",
-     "input_schema": {"type": "object", "properties": {"account": {"type": "string", "description": "account id (parkourflux, carveteran) or 'all' for every channel (default)"}}}},
+     "input_schema": {"type": "object", "properties": {"account": {"type": "string", "description": "account id (duke_biscuit, carveteran) or 'all' for every channel (default)"}}}},
     {"name": "move_file", "description": "File an uploaded attachment into the pipeline: dest 'footage' (background clips), 'music' (audio beds), 'satisfying' (split-screen clips), or 'branding' (logo).",
      "input_schema": {"type": "object", "properties": {"filename": {"type": "string"}, "dest": {"type": "string", "enum": ["footage", "music", "satisfying", "branding"]}}, "required": ["filename", "dest"]}},
     {"name": "list_uploads", "description": "List files the user has uploaded that are waiting to be filed.",
@@ -305,7 +305,7 @@ TOOLS = [
     {"name": "reply_to_comments", "description": "Run the auto comment-reply engine over new YouTube + Instagram comments. dry_run=true previews the replies WITHOUT posting (default, safe); dry_run=false actually posts them. Needs the YouTube force-ssl re-auth and IG manage_comments permission first.",
      "input_schema": {"type": "object", "properties": {"dry_run": {"type": "boolean", "description": "true = preview only (default); false = actually post"}}}},
     {"name": "check_coverage", "description": "Check whether every recent story actually reached BOTH YouTube and Instagram. The two platforms post independently, so a video can quietly end up on only one. Reports gaps; set fix=true to post the missing side (this publishes real videos -- confirm with the user first). TikTok is shown for info only and is never counted as a gap since it's approval-gated.",
-     "input_schema": {"type": "object", "properties": {"days": {"type": "integer", "description": "how far back to look (default 7)"}, "fix": {"type": "boolean", "description": "actually post the missing side (default false = report only)"}, "account": {"type": "string", "description": "account id (parkourflux, carveteran) or 'all' for every enabled channel (default)"}}}},
+     "input_schema": {"type": "object", "properties": {"days": {"type": "integer", "description": "how far back to look (default 7)"}, "fix": {"type": "boolean", "description": "actually post the missing side (default false = report only)"}, "account": {"type": "string", "description": "account id (duke_biscuit, carveteran) or 'all' for every enabled channel (default)"}}}},
     {"name": "post_to_tiktok", "description": "Push ALREADY-RENDERED video(s) from output/ to the user's TikTok drafts (inbox) -- this is how we cross-post existing YouTube/Instagram content to TikTok. TikTok is DRAFT-ONLY right now: the video lands in the TikTok app and the user taps Post themselves. Use 'count' for the N newest videos (default 1, max 5) or 'filename' for a specific one. This does NOT generate a new story -- use post_video for that.",
      "input_schema": {"type": "object", "properties": {"count": {"type": "integer", "description": "how many of the newest rendered videos to push (default 1, max 5)"}, "filename": {"type": "string", "description": "specific video filename in output/ (optional)"}}}},
 ]
@@ -429,7 +429,7 @@ SYSTEM = (
     "  - The Car Veteran (carveteran) -- two-voice car-advice dialogue. This is the "
     "lead channel: it is the one gaining subscribers, and the TikTok app now belongs "
     "to it. Prefer it when a request does not name a channel.\n"
-    "  - ParkourFlux (parkourflux) -- AI Reddit-style story videos over Minecraft "
+    "  - ParkourFlux (duke_biscuit) -- AI Reddit-style story videos over Minecraft "
     "parkour footage.\n"
     "Both post to YouTube and Instagram automatically, plus TikTok on request "
     "(drafts -- see INFRA). You can check performance, post a new video on command, "
@@ -493,7 +493,7 @@ SYSTEM = (
     "never rewrites .env. So: the user does NOT need to paste Instagram tokens again. "
     "If IG posting ever fails on auth, check `python ig_token.py --status` first.\n"
     "- Per-account Instagram credentials are now STRICT: the shared IG_USER_ID / "
-    "IG_ACCESS_TOKEN belong to parkourflux only. Any other account needs its own "
+    "IG_ACCESS_TOKEN belong to duke_biscuit only. Any other account needs its own "
     "IG_USER_ID_<ID> / IG_ACCESS_TOKEN_<ID> or it posts nowhere. This replaced a silent "
     "fallback that made a second channel resolve to ParkourFlux's profile.\n"
     "- PUBLISHING METADATA IS PER-ACCOUNT (2026-08-09): yt_tags / yt_hashtags / "
@@ -546,7 +546,7 @@ SYSTEM = (
     "different audiences, so a merged figure hides which one is working. If the owner "
     "asks to post and has not said which channel, ASK: a Reddit story on the car channel "
     "is the wrong content in front of the wrong audience.\n"
-    "- Footage now lives per channel: footage/parkourflux/{bright_biomes,night_1080,"
+    "- Footage now lives per channel: footage/duke_biscuit/{bright_biomes,night_1080,"
     "orbital_day} and footage/carveteran/{gameplay,road} -- 15 GTA clips the owner "
     "recorded plus 30 licence-clean Pexels road clips (scripts/fetch_footage.py, needs "
     "PEXELS_API_KEY). Each video commits to ONE set, so gameplay and dashcam alternate "
@@ -607,7 +607,7 @@ SYSTEM = (
     "- Background footage (RESTRUCTURED 2026-08-09): every channel owns a tree and can "
     "see NOTHING outside it. accounts.footage_root() decides: footage/<account_id>/ "
     "first, then the account's footage_dir, then the shared footage/. Layout now is "
-    "footage/parkourflux/{bright_biomes,night_1080,orbital_day} (29 Minecraft clips) and "
+    "footage/duke_biscuit/{bright_biomes,night_1080,orbital_day} (29 Minecraft clips) and "
     "footage/driving/ (15 GTA/driving clips, the car channel). Each video picks ONE themed "
     "subfolder and stays in it, then cuts a fresh random montage inside it.\n"
     "- SO: to add clips for a channel, put them in THAT channel's tree -- new clips "

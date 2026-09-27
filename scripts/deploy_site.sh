@@ -5,7 +5,7 @@
 # Git-connected project deploys every push on its own and this script becomes
 # dead weight -- prefer that, and delete this, if the connection ever works.
 #
-# Takes a channel: parkourflux (default) or carveteran. Each channel gets its
+# Takes a channel: duke_biscuit (default) or carveteran. Each channel gets its
 # OWN Pages project, because the project name IS the hostname and TikTok wants
 # the domain to match the app name -- and renaming a Pages project does NOT
 # change its hostname (Cloudflare's own rename dialog says so), so a second
@@ -19,17 +19,17 @@
 #
 # Both are read from ~/media_maker/.env. The token is never printed.
 #
-#   bash scripts/deploy_site.sh              (parkourflux)
+#   bash scripts/deploy_site.sh              (duke_biscuit)
 #   bash scripts/deploy_site.sh carveteran
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-CHANNEL="${1:-parkourflux}"
+CHANNEL="${1:-duke_biscuit}"
 case "$CHANNEL" in
-    parkourflux) PROJECT="parkourflux";   SRC="site" ;;
+    duke_biscuit) PROJECT="duke_biscuit";   SRC="site" ;;
     carveteran)  PROJECT="thecarveteran"; SRC="site_carveteran" ;;
-    *) echo "unknown channel '$CHANNEL' -- use parkourflux or carveteran" >&2
+    *) echo "unknown channel '$CHANNEL' -- use duke_biscuit or carveteran" >&2
        exit 1 ;;
 esac
 [ -d "$SRC" ] || { echo "$SRC/ does not exist" >&2; exit 1; }

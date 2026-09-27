@@ -72,7 +72,7 @@ def _write(data: dict) -> None:
     tmp.replace(STORE)
 
 
-def env_token(acc_id: str, default_id: str = "parkourflux") -> str | None:
+def env_token(acc_id: str, default_id: str = "duke_biscuit") -> str | None:
     """The hand-pasted token from .env, with the same per-account rule as
     accounts.Account: shared vars belong to the default account only."""
     own = os.environ.get(f"IG_ACCESS_TOKEN_{acc_id.upper()}")
@@ -81,7 +81,7 @@ def env_token(acc_id: str, default_id: str = "parkourflux") -> str | None:
     return os.environ.get("IG_ACCESS_TOKEN")
 
 
-def current(acc_id: str, default_id: str = "parkourflux") -> str | None:
+def current(acc_id: str, default_id: str = "duke_biscuit") -> str | None:
     """The token to use right now: the refreshed one if we have it, else .env."""
     rec = _read().get(acc_id)
     if rec and rec.get("access_token"):
@@ -103,7 +103,7 @@ def status(acc_id: str) -> dict:
 
 
 def refresh(acc_id: str, force: bool = False,
-            default_id: str = "parkourflux") -> tuple[bool, str]:
+            default_id: str = "duke_biscuit") -> tuple[bool, str]:
     """Refresh one account's token if it is due. Returns (changed, message).
 
     Never raises: a failed refresh must not stop a posting run. The old token
