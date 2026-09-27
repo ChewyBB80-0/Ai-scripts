@@ -20,6 +20,7 @@ import requests
 import tiktok_queue
 
 OWNER = int(os.environ["DISCORD_USER_ID"])
+CHANNEL_ID = 1530983195015643316
 CHAT_URL = "http://127.0.0.1:8000/api/chat"
 # Free-tier upload ceiling, with headroom. Raising this to 24MB on the theory
 # that Discord now allows 25MB was tried on 2026-08-08 and the API returned
@@ -83,6 +84,19 @@ class ApprovalView(discord.ui.View):
         except Exception:
             pass
         result = await client.loop.run_in_executor(None, fn, self.qid)
+        try:
+            channel = await client.fetch_channel(CHANNEL_ID)
+            await channel.send(result)
+        except Exception as e:
+            print(f"Failed to send result to channel: {e}")
+        
+        # Post the result to the specified channel
+        try:
+            channel = await client.fetch_channel(CHANNEL_ID)
+            await channel.send(result)
+        except Exception as e:
+            print(fFailed to send result to channel: {e})
+        
         await itx.followup.send(result)
         self.stop()
 
