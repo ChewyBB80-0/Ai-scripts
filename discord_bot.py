@@ -19,7 +19,7 @@ import requests
 
 import tiktok_queue
 
-OWNER = int(os.environ["DISCORD_USER_ID"]); ALERT_RECIPIENTS = [OWNER, 1528249391528415263]
+OWNER = int(os.environ["DISCORD_USER_ID"])
 CHAT_URL = "http://127.0.0.1:8000/api/chat"
 # Free-tier upload ceiling, with headroom. Raising this to 24MB on the theory
 # that Discord now allows 25MB was tried on 2026-08-08 and the API returned
