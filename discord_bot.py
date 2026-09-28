@@ -95,7 +95,7 @@ class ApprovalView(discord.ui.View):
             channel = await client.fetch_channel(CHANNEL_ID)
             await channel.send(result)
         except Exception as e:
-            print(fFailed to send result to channel: {e})
+            print(f"Failed to send result to channel: {e}")
         
         await itx.followup.send(result)
         self.stop()
