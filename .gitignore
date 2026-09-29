@@ -38,3 +38,4 @@ voice/
 
 # Timestamped backups (*.bak-YYYYMMDD-HHMMSS) do NOT match the *.bak rule above.
 *.bak-*
+dashboard/post_history.json
