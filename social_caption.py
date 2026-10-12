@@ -269,6 +269,6 @@ if __name__ == "__main__":
     from pathlib import Path
     story = json.loads(Path(sys.argv[1]).read_text())
     from accounts import get_account
-    acc_id = sys.argv[2] if len(sys.argv) > 2 else "parkourflux"
+    acc_id = sys.argv[2] if len(sys.argv) > 2 else "duke_biscuit"
     print(build_caption(story.get("hook") or story["beats"][0],
                         handle=get_account(acc_id).handle))

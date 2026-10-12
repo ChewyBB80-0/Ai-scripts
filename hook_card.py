@@ -247,7 +247,7 @@ if __name__ == "__main__":
     #   python hook_card.py [account_id]
     import sys
     from accounts import get_account
-    _acc = get_account(sys.argv[1] if len(sys.argv) > 1 else "parkourflux")
+    _acc = get_account(sys.argv[1] if len(sys.argv) > 1 else "duke_biscuit")
     p = build_hook_card(
         "Which officer's incompetence did your NCO corps quietly fix for months?",
         "output/_card_test.png",
