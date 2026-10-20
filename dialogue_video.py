@@ -300,22 +300,74 @@ Return ONLY JSON, no other text:
     return data
 
 
-async def _speak(text: str, spk: dict, out_path: Path):
-    """One line -> mp3 + word timings (relative to that line)."""
+# Edge TTS is a free shared endpoint and throttles with a 429 at the websocket
+# handshake. Measured 2026-10-20: even a SINGLE isolated call gets 429 roughly
+# two times in three, so this is not a burst problem that pacing alone fixes --
+# every call needs to be retried. tts.py has had this backoff for a while, but
+# dialogue_video calls edge_tts.Communicate directly and so never used it, which
+# is why both channels still died on the first throttled line.
+#
+# Do not match on the exception text: aiohttp raises WSServerHandshakeError
+# whose message is always "Invalid response status" and never contains "429".
+# The code is only on the .status attribute.
+TTS_MAX_RETRIES = 8
+TTS_INITIAL_DELAY = 4.0
+TTS_MAX_DELAY = 60.0
+
+
+async def _speak_once(text: str, spk: dict, out_path: Path):
+    """A single synthesis attempt. Truncates out_path, so a failed attempt
+    leaves no partial audio behind for the next one."""
     import edge_tts
 
     c = edge_tts.Communicate(text, spk["voice"], rate=spk["rate"],
                              pitch=spk["pitch"], boundary="WordBoundary")
     words = []
+    got_audio = False
     with open(out_path, "wb") as f:
         async for chunk in c.stream():
             if chunk["type"] == "audio":
                 f.write(chunk["data"])
+                got_audio = True
             elif chunk["type"] == "WordBoundary":
                 words.append({"word": chunk["text"],
                               "start_ms": int(chunk["offset"] / 10_000),
                               "end_ms": int((chunk["offset"] + chunk["duration"]) / 10_000)})
+    # A handshake can succeed and still stream nothing; that silent mp3 would
+    # otherwise become a silent stretch of finished video.
+    if not got_audio:
+        raise RuntimeError("Edge TTS returned no audio for this line")
     return words
+
+
+async def _speak(text: str, spk: dict, out_path: Path):
+    """One line -> mp3 + word timings (relative to that line), retrying through
+    Edge TTS rate limits with exponential backoff and jitter."""
+    import asyncio as _asyncio
+    import random
+    import sys
+
+    delay = TTS_INITIAL_DELAY
+    last = None
+    for attempt in range(TTS_MAX_RETRIES + 1):
+        try:
+            return await _speak_once(text, spk, out_path)
+        except Exception as e:
+            last = e
+            status = getattr(e, "status", None)
+            retryable = status in (429, 503) or isinstance(e, RuntimeError)
+            if not retryable or attempt >= TTS_MAX_RETRIES:
+                break
+            # Jitter: every line of an episode retries on the same schedule
+            # otherwise, so they all come back and collide again.
+            wait = delay + random.uniform(0, 0.4 * delay)
+            print(f"edge-tts throttled (status={status}), retry "
+                  f"{attempt + 1}/{TTS_MAX_RETRIES} in {wait:.1f}s",
+                  file=sys.stderr, flush=True)
+            await _asyncio.sleep(wait)
+            delay = min(delay * 2, TTS_MAX_DELAY)
+    out_path.unlink(missing_ok=True)
+    raise last
 
 
 def _duration_ms(path: Path) -> int:
