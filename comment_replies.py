@@ -57,9 +57,13 @@ def _save_replied(acc: Account, ids: set):
 
 
 def _video_context(acc: Account) -> str:
-    """What this channel's videos ARE, for the reply prompt. Was the literal
-    string "one of our Reddit story videos" for every account."""
+    """What this channel's videos ARE, for the reply prompt."""
+    tags = getattr(acc, "yt_tags", []) or []
+    tag_text = " ".join(tags).lower()
+    is_pet = any(t in tag_text for t in ["dog", "pet", "cat", "puppy"])
     if getattr(acc, "content_type", "story") == "dialogue":
+        if is_pet:
+            return "one of our short pet/dog care videos"
         return "one of our short car-maintenance tip videos"
     return "one of our short story videos"
 
@@ -89,8 +93,14 @@ def _generate_reply(comment_text: str, context: str, author: str,
     # The persona follows the channel. This said "a Reddit-story video channel"
     # for every account, which is the wrong voice on a car-advice channel.
     if acc is not None and getattr(acc, "content_type", "story") == "dialogue":
-        who = (f"the voice of {acc.name}, a car-maintenance channel that tells "
-               "people what shops overcharge for")
+        tags = getattr(acc, "yt_tags", []) or []
+        tag_text = " ".join(tags).lower()
+        is_pet = any(t in tag_text for t in ["dog", "pet", "cat", "puppy"])
+        if is_pet:
+            who = f"the voice of {acc.name}, a pet and dog care channel"
+        else:
+            who = (f"the voice of {acc.name}, a car-maintenance channel that tells "
+                   "people what shops overcharge for")
     else:
         who = "the friendly voice of a short-story video channel"
     author = author.lstrip("@")          # the handle already carries its own @
