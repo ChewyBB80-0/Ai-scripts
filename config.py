@@ -199,7 +199,7 @@ POST_TO_IG_STORY = True
 # OFF by default: turn on only AFTER re-authing YouTube with the force-ssl
 # scope (add_channel.py) and confirming the IG token has instagram_manage_comments.
 # Start with a dry run (python comment_replies.py --dry-run) to preview replies.
-ENABLE_COMMENT_REPLIES = False
+ENABLE_COMMENT_REPLIES = True
 # Safety rate limit -- max replies posted per platform per run (avoids spam flags).
 COMMENT_REPLY_LIMIT_PER_RUN = 15
 

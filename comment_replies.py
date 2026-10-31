@@ -103,7 +103,7 @@ def _generate_reply(comment_text: str, context: str, author: str,
                    "people what shops overcharge for")
     else:
         who = "the friendly voice of a short-story video channel"
-    author = author.lstrip("@")          # the handle already carries its own @
+    author = str(author).lstrip("@")          # the handle already carries its own @
     prompt = f"""You are {who}, replying to a viewer's comment.
 Video context: "{context}"
 Comment from @{author}: "{comment_text}"
