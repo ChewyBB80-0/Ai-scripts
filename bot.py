@@ -1384,3 +1384,6 @@ if __name__ == "__main__":
         except Exception as e:
             log_error(f"[{acc.id}] run failed: {e}")
             print(f"[{acc.id}] run failed (continuing with next account): {e}")
+        # Stagger accounts to avoid hitting Edge TTS rate limits simultaneously
+        if not args.dry_render:
+            _time.sleep(60)
