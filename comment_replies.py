@@ -64,13 +64,14 @@ def _video_context(acc: Account) -> str:
     return "one of our short story videos"
 
 
-def _preview(platform: str, author: str, text: str, reply: str) -> None:
+def _preview(platform: str, author: str, text: str, reply: str, acc=None) -> None:
     """Show the WHOLE comment. It used to truncate to 45 characters, and at that
     length a mechanic's detailed rebuttal of the video's advice was
     indistinguishable from a compliment -- which is exactly the case a human
     needs to catch before enabling this. A preview you cannot judge from is
     worse than no preview, because it looks like due diligence."""
-    print(f"[{platform} dry-run] {author.lstrip('@')}")
+    acc_name = getattr(acc, "id", "?") if acc else "?"
+    print(f"[{platform} dry-run] [{acc_name}] {author.lstrip('@')}")
     print(f"    COMMENT: {text.strip()}")
     print(f"    REPLY  : {reply}")
     print()
@@ -158,7 +159,7 @@ def reply_youtube(acc: Account, limit: int, dry_run: bool) -> int:
                     replied.add(cid)
                     continue
                 if dry_run:
-                    _preview("YT", author, text, reply)
+                    _preview("YT", author, text, reply, acc)
                 else:
                     yt.comments().insert(part="snippet", body={
                         "snippet": {"parentId": item["id"], "textOriginal": reply}
@@ -206,7 +207,7 @@ def reply_instagram(acc: Account, limit: int, dry_run: bool) -> int:
                     replied.add(cid)
                     continue
                 if dry_run:
-                    _preview("IG", author, text, reply)
+                    _preview("IG", author, text, reply, acc)
                 else:
                     rr = requests.post(f"{IG_GRAPH}/{cid}/replies",
                                        data={"message": reply, "access_token": token},
